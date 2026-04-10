@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025 Airbus Commercial Aircraft
+ * Copyright (c) 2019-2026 Airbus Commercial Aircraft
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -47,7 +47,6 @@ static guint64 bufSize = DEF_BUF_SIZE;
 //
 int main(int argc, char *argv[])
 {
-  int index = 0;
   SLogOptions options[] =
   {
     { "key-file", 'k', "Current host key file", "FILE", NULL },
@@ -108,8 +107,8 @@ int main(int argc, char *argv[])
   memset(mac, 0, nm);
 
   // Assign option arguments
-  index = 0;
-  hostkeypath = options[index].arg;
+  int index = 0;
+  hostkeypath = options[index++].arg;
   if (NULL == hostkeypath)
     {
       g_print("ERROR: Option --key-file or -k with a valid path to a Host key is missing!\n\n");
@@ -120,7 +119,6 @@ int main(int argc, char *argv[])
       return 1; //-- ERROR
     }
 
-  index++;
   inputMACpath = options[index].arg;
   if (NULL == inputMACpath)
     {
@@ -134,7 +132,8 @@ int main(int argc, char *argv[])
 
   // Input and output file arguments
   index = 1;
-  newhostKeypath = argv[index];
+
+  newhostKeypath = argv[index++];
   if (newhostKeypath == NULL)
     {
       // Safe. Will not be reached due check of argc above
@@ -144,9 +143,8 @@ int main(int argc, char *argv[])
       g_assert_not_reached();
       return 1; //-- ERROR
     }
-  index++;
 
-  outputMACpath = argv[index];
+  outputMACpath = argv[index++];
   if (outputMACpath == NULL)
     {
       // Safe. Will not be reached due check of argc above
@@ -156,10 +154,8 @@ int main(int argc, char *argv[])
       g_assert_not_reached();
       return 1; //-- ERROR
     }
-  index++;
 
-  inputlogpath = argv[index];
-  index++;
+  inputlogpath = argv[index++];
   if (!g_file_test(inputlogpath, G_FILE_TEST_IS_REGULAR))
     {
       GString *errorMsg = g_string_new(FILE_ERROR);
@@ -169,8 +165,7 @@ int main(int argc, char *argv[])
       return 1; //-- ERROR
     }
 
-  outputlogpath = argv[index];
-  index++;
+  outputlogpath = argv[index++];
   if (outputlogpath == NULL)
     {
       // Safe. Will not be reached due check of argc above
@@ -242,29 +237,38 @@ int main(int argc, char *argv[])
       create_initial_mac0(key, mac);
       if (writeAggregatedMAC(inputMACpath, mac) == FALSE)
         {
-          //-- ERROR: file was not written. Anyhow do not exit here.
-          msg_warning(SLOG_WARNING_PREFIX,
-                      evt_tag_str("Reason", "writeAggregatedMAC was not successful!"),
-                      evt_tag_str("file", inputMACpath));
+          //-- ERROR: File was not written!
+          msg_error(SLOG_ERROR_PREFIX,
+                    evt_tag_str("Reason", "writeAggregatedMAC was not successful!"),
+                    evt_tag_str("file", inputMACpath));
+          fclose(inputFile);
+          fclose(outputFile);
+          g_option_context_free(context);
+          return -1; //-- ERROR
         }
       if (!g_file_test(inputMACpath, G_FILE_TEST_IS_REGULAR))
         {
-          //-- ERROR: file not found. Anyhow do not exit here.
-          msg_warning(SLOG_WARNING_PREFIX,
-                      evt_tag_str("Reason", "Initial MAC file was not written as expected!"),
-                      evt_tag_str("file", inputMACpath));
+          //-- ERROR: File not found!
+          msg_error(SLOG_ERROR_PREFIX,
+                    evt_tag_str("Reason", "Initial MAC file was not written as expected!"),
+                    evt_tag_str("file", inputMACpath));
+          fclose(inputFile);
+          fclose(outputFile);
+          g_option_context_free(context);
+          return -1; //-- ERROR
         }
     }
 
   // Read MAC (if possible)
   if (readAggregatedMAC(inputMACpath, mac) == 0)
     {
-      msg_warning(SLOG_WARNING_PREFIX,
-                  evt_tag_str("Reason", "Unable to open input MAC file!"),
-                  evt_tag_str("file", inputMACpath));
-      // This is an error but we can proceed anyhow. But later, when
-      // slogverify is used, a dummy mac file must be provided for the first verification instead
-      // and this will cause an verification error.
+      msg_error(SLOG_ERROR_PREFIX,
+                evt_tag_str("Reason", "Unable to open input MAC file!"),
+                evt_tag_str("file", inputMACpath));
+      fclose(inputFile);
+      fclose(outputFile);
+      g_option_context_free(context);
+      return -1; //-- ERROR
     }
 
   size_t readLen = 0;
@@ -280,7 +284,7 @@ int main(int argc, char *argv[])
       GString *result = g_string_new(NULL);
       GString *inputGString = g_string_new(line);
 
-#if defined(IS_LIMIT_LOGSTR) && ((IS_LIMIT_LOGSTR) == 1)
+#if IS_LIMIT_LOGSTR
 
       //-- 2025-12-03
       //   In the classic secure logging (not the crash recovery variant)
@@ -310,7 +314,6 @@ int main(int argc, char *argv[])
           msg_warning(SLOG_WARNING_PREFIX,
                       evt_tag_str("Reason", "Unable to encrypt log entry!"),
                       evt_tag_str("line", inputGString->str));
-
           fclose(inputFile);
           fclose(outputFile);
           g_option_context_free(context);
