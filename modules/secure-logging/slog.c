@@ -47,7 +47,16 @@
 #define LONG_OPT_INDICATOR "--"
 #define SHORT_OPT_INDICATOR "-"
 
-// This initialization only works with GCC.
+// This initialization works for C99 or newer and it might not
+// be supported by all compilers!
+//
+// Tested successfully with
+// gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-11)
+// clang version 20.1.8 (RESF 20.1.8-3.el9)
+// and
+// gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+// Ubuntu clang version 18.1.3 (1ubuntu1)
+//
 static guchar KEYPATTERN[AES_BLOCKSIZE] = { [0 ... (AES_BLOCKSIZE - 1) ] = IPAD };
 static guchar MACPATTERN[AES_BLOCKSIZE] = { [0 ... (AES_BLOCKSIZE - 1) ] = OPAD };
 static guchar GAMMA[AES_BLOCKSIZE] = { [0 ... (AES_BLOCKSIZE - 1) ] =  EPAD};
@@ -776,7 +785,7 @@ gboolean PRF(guchar *key, guchar *originalInput,
   size_t gsize_len = sizeof(gsize);
 
   // i || Label || 00 || Context || outputLength;
-  gsize myInputLength = sizeof(gsize) + label_len + 1 + context_len + output_len;
+  gsize myInputLength = gsize_len + label_len + 1 + context_len + output_len;
 
   guchar *input = g_new0(guchar, myInputLength);
 
@@ -918,14 +927,17 @@ gboolean writeAggregatedMAC(gchar *filename, guchar *outputBuffer)
       cmacOk = FALSE;
     }
 
-  // Write new aggregated MAC to file
-  result = write_to_file(f, outputmacdata, CMAC_LENGTH);
-  if (!result)
+  if (TRUE == cmacOk)
     {
-      msg_error(SLOG_ERROR_PREFIX, evt_tag_str("Reason", "Error new MAC write_to_file"));
-      (void) close_file(f);
-      g_free(f);
-      return FALSE; //-- ERROR
+      // Write new aggregated MAC to file
+      result = write_to_file(f, outputmacdata, CMAC_LENGTH);
+      if (!result)
+        {
+          msg_error(SLOG_ERROR_PREFIX, evt_tag_str("Reason", "Error new MAC write_to_file"));
+          (void) close_file(f);
+          g_free(f);
+          return FALSE; //-- ERROR
+        }
     }
 
   result = close_file(f);
