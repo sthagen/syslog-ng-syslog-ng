@@ -58,6 +58,7 @@ EXTRA_DIST += \
 	tests/light/functional_tests/source_drivers/file_source/test_acceptance.py \
 	tests/light/functional_tests/source_drivers/file_source/test_file_source.py \
 	tests/light/functional_tests/source_drivers/file_source/test_file_source_exclude.py \
+	tests/light/functional_tests/source_drivers/test_input_drivers.py \
 	tests/light/functional_tests/source_drivers/file_source/test_follow_freq_value.py \
 	tests/light/functional_tests/source_drivers/file_source/test_no_header_flag.py \
 	tests/light/functional_tests/source_drivers/generator_source/test_generator_source.py \
