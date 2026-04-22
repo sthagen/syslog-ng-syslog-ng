@@ -240,7 +240,7 @@ run_with_timeout () {
 	# run_with_timeout [timeout_sec] command
 	local timeout_sec
 	case "$1" in
-		'')        echo "Error: No command passed" >> ${tmpdir}/syslog-ng.debun.txt ; return 1 ;;
+		'')        echo "Error: No command passed" >&4 ; return 1 ;;
 		*[!0-9.]*) timeout_sec=180 ;;
 		*)         timeout_sec="$1"; shift ;;
 	esac
@@ -256,7 +256,7 @@ run_with_timeout () {
 	wait "$watchdog_pid" 2>/dev/null
 	if [ -f "$timed_out_file" ]; then
 		rm -f "$timed_out_file"
-		echo "Warning: Command timeout reached: ${timeout_sec}s: $*" >> ${tmpdir}/syslog-ng.debun.txt
+		printf 'Warning: Command timeout reached: %ss: %s\n' "${timeout_sec}" "${*}" >&4
 		ret=124
 	fi
 	return $ret
@@ -274,7 +274,7 @@ debun_init () {
 	# Start redirections
 
 	#exec 3>&1 >${tmpdir}/syslog-ng.debun.txt 2>${tmpdir}/syslog-ng.debun.txt
-	exec 3>&1 >${tmpdir}/syslog-ng.debun.txt 2>&1
+	exec 3>&1 >${tmpdir}/syslog-ng.debun.txt 4>&1 2>&1
 	echo "Syslog-NG DEBUg buNdle generator"
 	sync
 	while [ ! -f ${tmpdir}/syslog-ng.debun.txt ] ; do sleep 1 ; done
