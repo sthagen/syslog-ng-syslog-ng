@@ -818,7 +818,7 @@ acquire_syslog_stats () {
 		#if we reach this brach, then syslog.query.all - as generated above - will not contain any meaningful data
 		rm ${tmpdir}/syslog.query.all.${tsdata}
 		tsdata=$( timestamp )
-		${syslogngquerybin} sum "*" > ${tmpdir}/syslog.query.all.${tsdata} 2>/dev/null
+		run_with_timeout ${syslogngquerybin} sum "*" > ${tmpdir}/syslog.query.all.${tsdata} 2>/dev/null
 		echo ${syslogngquerybin} sum "*"
 	fi
 }
