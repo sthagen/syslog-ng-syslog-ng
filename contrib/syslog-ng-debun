@@ -242,7 +242,7 @@ run_with_timeout () {
 	local timeout_sec=180
 
 	case "$1" in
-		'-t') 
+		'-t')
 			case "$2" in
 				''|*[!0-9]*)
 					echo "Error: run_with_timeout: -t requires an integer argument" >&4
@@ -251,36 +251,37 @@ run_with_timeout () {
 			esac
 			shift ; shift ;;
 	esac
-	if [ -z "$1" ] ;then
+	if [ -z "$1" ] ; then
 		echo "Error: run_with_timeout: No command passed" >&4
 		return 1
 	fi
 
 	"$@" &
 	local cmd_pid=$!
-	local cmd_fingerprint="$(pspoo ${cmd_pid} 2>/dev/null)"
+	local cmd_fingerprint="$(pspoo "${cmd_pid}" 2>/dev/null)"
 	local timed_out_file="${tmpdir:-/tmp}/syslog-ng-debun_run-timeout.${cmd_pid}.flag"
 
-	( 	local i=0
+	(
+		local i=0
 		while [ "${i}" -lt "${timeout_sec}" ] ; do
 			sleep 1
 			i=$((i + 1))
 		done
 		touch "${timed_out_file}" 2>/dev/null
-		if [ "${cmd_fingerprint:-unset}" = "$(pspoo ${cmd_pid} 2>/dev/null)" ]; then
+		if [ "${cmd_fingerprint:-unset}" = "$(pspoo "${cmd_pid}" 2>/dev/null)" ]; then
 			kill "${cmd_pid}" 2>/dev/null
 			sleep 2
-			if [ "${cmd_fingerprint:-unset}" = "$(pspoo ${cmd_pid} 2>/dev/null)" ]; then
+			if [ "${cmd_fingerprint:-unset}" = "$(pspoo "${cmd_pid}" 2>/dev/null)" ]; then
 				kill -9 "${cmd_pid}" 2>/dev/null
 			fi
 		fi
 	) &
 	local watchdog_pid=$!
-	local watchdog_fingerprint="$(pspoo ${watchdog_pid} 2>/dev/null)"
+	local watchdog_fingerprint="$(pspoo "${watchdog_pid}" 2>/dev/null)"
 
 	wait "${cmd_pid}" 2>/dev/null
 	local ret=$?
-	if [ "${watchdog_fingerprint:-unset}" = "$(pspoo ${watchdog_pid} 2>/dev/null)" ]; then
+	if [ "${watchdog_fingerprint:-unset}" = "$(pspoo "${watchdog_pid}" 2>/dev/null)" ]; then
 		kill "${watchdog_pid}" 2>/dev/null
 	fi
 	wait "${watchdog_pid}" >/dev/null 2>&1
