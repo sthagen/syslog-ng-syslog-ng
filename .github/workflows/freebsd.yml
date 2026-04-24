@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: ["develop", "master"]
+    branches: [ "develop", "master" ]
   schedule:
     - cron: "00 21 * * *"
 
@@ -17,11 +17,11 @@ jobs:
     strategy:
       matrix:
         # https://github.com/marketplace/actions/freebsd-vm
-        release: ["15.0", "14.2"]
-        arch: [aarch64, amd64]
-        build-tool: [cmake, autotools]
-        compiler: [{ cpp: clang++, c: clang }] # , {cpp: g++, c: gcc}
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        release: [ "15.0", "14.2" ]
+        arch: [ aarch64, amd64 ]
+        build-tool: [ cmake, autotools ]
+        compiler: [ { cpp: clang++, c: clang } ] # , {cpp: g++, c: gcc}
+        runner: [ ubuntu-24.04, ubuntu-24.04-arm ]
         exclude:
           # Do not use mismatching runner and vm arch
           - runner: ubuntu-24.04
@@ -121,6 +121,35 @@ jobs:
 
           prepare: |
             #cat /etc/pkg/FreeBSD.conf
+
+            # Make any implicit pkg bootstrap (on fresh VMs where pkg is not yet
+            # installed) non-interactive.
+            export ASSUME_ALWAYS_YES=yes
+
+            # The default FreeBSD-ports catalogue (the "latest" branch) on some
+            # FreeBSD releases (notably 15.0) getting corrupted form time to time
+            # and pkg fails with garbled metadata errors like:
+            #   "pkg: truncated reply for signature_fingerprintsoutput"
+            #   "Repository FreeBSD-ports cannot be opened. 'pkg update' required"
+            # The "quarterly" branch is built less often and is unaffected.
+            # Detect the issue by probing the catalogue and, if broken, override
+            # the FreeBSD-ports repo to use "quarterly" before installing.
+            if pkg update -f 2>&1 | tee /tmp/pkg-update.log | grep -q "truncated reply\|cannot be opened"; then
+              echo "Detected broken FreeBSD-ports catalogue, switching to the quarterly branch..."
+              mkdir -p /usr/local/etc/pkg/repos
+              cat > /usr/local/etc/pkg/repos/FreeBSD.conf <<'EOF'
+            FreeBSD: {
+              url: "pkg+http://pkg.FreeBSD.org/${ABI}/quarterly",
+              mirror_type: "srv",
+              signature_type: "fingerprints",
+              fingerprints: "/usr/share/keys/pkg",
+              enabled: yes
+            }
+            EOF
+              pkg update -f
+            else
+              echo "pkg catalogue OK, using default repo configuration."
+            fi
 
             pkg install -y autoconf autoconf-archive automake bison cmake flex git gperf glib json-c libtool pcre2 pkgconf gradle grpc hiredis libdbi libdbi-drivers libmaxminddb libnet libpaho-mqtt3 librdkafka libesmtp mongo-c-driver net-snmp openjdk25 rabbitmq-c riemann-c-client
             # For testing
