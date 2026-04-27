@@ -187,8 +187,8 @@ jobs:
       image-cflags: ${{ matrix.image.cflags }}
       image-configure-flags: ${{ matrix.image.configure_flags }}
       image-cmake-configure-flags: ${{ matrix.image.cmake_configure_flags }}
-      run-condition: ${{ matrix.image.name == 'devshell' || github.event_name == 'schedule' || inputs.use_all }}
-      use_all: ${{ inputs.use_all }}
+      run-condition: ${{ matrix.image.name == 'devshell' || github.event_name == 'schedule' }}
+      use_all: ${{ inputs.use_all == true }}
 
   distcheck:
     runs-on: ubuntu-latest
