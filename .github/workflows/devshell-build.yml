@@ -53,7 +53,7 @@ permissions:
 
 jobs:
   build:
-    if: ${{ inputs.run-condition }}
+    if: ${{ inputs.run-condition || inputs.use_all}}
     name: ${{ inputs.image-name }}-${{ inputs.build-tool }}-${{ inputs.cc }}${{ inputs.image-arch-suffix || '-X86-64' }}
     runs-on: ${{ inputs.platform }}
     container:
