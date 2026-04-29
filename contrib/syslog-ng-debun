@@ -1051,7 +1051,7 @@ fhs_set_freebsd () {
 	fhs_set_paths_from_prefix /usr/local
 
 	# FreeBSD ports keep runtime data outside the prefix
-	vardir=/var/db/syslog-ng
+	vardir=/var/db
 	piddir=/var/run
 }
 
@@ -1322,7 +1322,7 @@ debun_aix () {
 
 	echo "Check package files integrity"
 	rpm_verify syslog-ng-premium-edition syslog-ng-premium-edition-client syslog-ng-premium-edition-compact || \
-		echo "No syslog-ng RPM packages have been found!"
+	echo "No syslog-ng RPM packages have been found!"
 	echo "list syslog-related packages"
 	rpm -qa |grep syslog > ${tmpdir}/rpm.packages
 }
@@ -1647,6 +1647,8 @@ setup_env_freebsd () {
 	service_stop="${initfile} stop"
 	service_start="${initfile} start"
 	service_status="${initfile} status"
+	# BSD cpio (libarchive) does not support -L in pass-through mode
+	cpiopdL="cpio -pd"
 
 	unset -f free
 	unset -f netstatnlp
@@ -1673,6 +1675,9 @@ setup_env_freebsd () {
 
 setup_env_macos () {
 	# Overrides for tools that differ on macOS (Darwin)
+
+	# BSD cpio (libarchive) does not support -L in pass-through mode
+	cpiopdL="cpio -pd"
 
 	# Network: macOS has no 'ip' command; use ifconfig / netstat
 	ipconfig="ifconfig -a"
