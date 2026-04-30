@@ -148,7 +148,7 @@ gboolean iterativeMode(char *path_prevKey, char *path_prevMAC, char *path_curMAC
   guchar previousKey[KEY_LENGTH];
   guint64 previousKeyCounter = 0;
 
-  msg_info(SLOG_INFO_PREFIX, evt_tag_str("Reason", "Reading previous keyfile"), evt_tag_str("name", path_prevKey));
+  msg_info(SLOG_INFO_PREFIX, evt_tag_str("Reason", "Reading previous key file"), evt_tag_str("name", path_prevKey));
   gboolean success = readKey(previousKey, &previousKeyCounter, path_prevKey);
   if (!success)
     {
@@ -157,7 +157,7 @@ gboolean iterativeMode(char *path_prevKey, char *path_prevMAC, char *path_curMAC
       return FALSE; //-- ERROR
     }
 
-  msg_info(SLOG_INFO_PREFIX, evt_tag_str("Reason", "Reading previous MACfile"), evt_tag_str("name", path_prevMAC));
+  msg_info(SLOG_INFO_PREFIX, evt_tag_str("Reason", "Reading previous MAC file"), evt_tag_str("name", path_prevMAC));
   FILE *fp_previousBigMAC = fopen(path_prevMAC, "r");
   if (fp_previousBigMAC == NULL)
     {
@@ -200,7 +200,7 @@ gboolean iterativeMode(char *path_prevKey, char *path_prevMAC, char *path_curMAC
   FILE *fp_input = fopen(path_inputlog, "r");
   if (fp_input == NULL)
     {
-      msg_error(SLOG_ERROR_PREFIX, evt_tag_str("Reason", "Unable to open inputlog"), evt_tag_str("file", path_inputlog));
+      msg_error(SLOG_ERROR_PREFIX, evt_tag_str("Reason", "Unable to open input log"), evt_tag_str("file", path_inputlog));
       return FALSE; //-- ERROR
     }
 
@@ -262,7 +262,23 @@ int main(int argc, char *argv[])
   };
 
   GError *error = NULL;
-  GOptionContext *context = g_option_context_new("INPUTLOG OUTPUTLOG [COUNTER] - Log archive verification");
+  GOptionContext *context = g_option_context_new("INPUTLOG OUTPUTLOG [COUNTER] - Log archive verification\n\n" \
+                                                 "Examples:\n" \
+                                                 "  normal mode:\n" \
+                                                 "    ./slogverify\n" \
+                                                 "    --key-file ./host.key\n" \
+                                                 "    --mac-file ./mac.dat\n" \
+                                                 "    ./messages.slog\n" \
+                                                 "    ./messages_verified.txt\n\n"
+                                                 "  iterative mode:\n" \
+                                                 "    ./slogverify -i\n" \
+                                                 "    --prev-key-file ./host0.key\n" \
+                                                 "    --prev-mac-file ./mac0.dat\n" \
+                                                 "    --mac-file ./mac1.dat\n" \
+                                                 "    ./plainlog_1.out\n" \
+                                                 "    ./plainlog_1.chk\n"
+                                                );
+
   GOptionGroup *group = g_option_group_new("Basic options", "Basic log archive verification options", "basic", &options,
                                            NULL);
 
@@ -290,7 +306,6 @@ int main(int argc, char *argv[])
   hostKeyPath = options[index++].arg;
   if (!iterative)
     {
-      g_print("hostKeyPath: %s\n", hostKeyPath);
       char *p_path_check = realpath(hostKeyPath, NULL);
       if (NULL == p_path_check)
         {
@@ -305,7 +320,6 @@ int main(int argc, char *argv[])
   curMacFilePath = options[index++].arg;
   if (!iterative)
     {
-      g_print("curMacFilePath: %s\n", curMacFilePath);
       char *p_path_check = realpath(curMacFilePath, NULL);
       if (NULL == p_path_check)
         {
@@ -320,7 +334,6 @@ int main(int argc, char *argv[])
   prevHostKeyPath = options[index++].arg;
   if (iterative)
     {
-      g_print("prevHostKeyPath: %s\n", prevHostKeyPath);
       char *p_path_check = realpath(prevHostKeyPath, NULL);
       if (NULL == p_path_check)
         {
@@ -335,7 +348,6 @@ int main(int argc, char *argv[])
   prevMacFilePath = options[index++].arg;
   if (iterative )
     {
-      g_print("prevMacFilePath: %s\n", prevMacFilePath);
       char *p_path_check = realpath(prevMacFilePath, NULL);
       if (NULL == p_path_check)
         {
@@ -350,7 +362,6 @@ int main(int argc, char *argv[])
   // Input and output file arguments
   index = 1;
   inputLogPath = argv[index++];
-  g_print("inputLogPath: %s\n", inputLogPath);
   if (!g_file_test(inputLogPath, G_FILE_TEST_IS_REGULAR))
     {
       GString *errorMsg = g_string_new(FILE_ERROR);
@@ -360,11 +371,9 @@ int main(int argc, char *argv[])
     }
 
   outputLogPath = argv[index++];
-  g_print("outputLogPath: %s\n", outputLogPath);
   gchar *dir_part = g_path_get_dirname(outputLogPath);
   if (NULL != dir_part)
     {
-      g_print("dir_part: %s\n", dir_part);
       char *dir_check = realpath(dir_part, NULL);
       if (NULL == dir_check)
         {
@@ -388,7 +397,6 @@ int main(int argc, char *argv[])
   if (argc == 4)
     {
       bufSize = atoi(argv[index]);
-
       if (bufSize <= MIN_BUF_SIZE || bufSize > MAX_BUF_SIZE)
         {
           msg_error(SLOG_ERROR_PREFIX,
