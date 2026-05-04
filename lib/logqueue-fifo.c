@@ -200,9 +200,12 @@ log_queue_fifo_drop_messages_from_input_queue(LogQueueFifo *self, InputQueue *in
       input_queue->non_flow_controlled_len--;
 
       LogMessage *msg = node->msg;
-      log_msg_drop(msg, &path_options, AT_PROCESSED);
-
+      /* Free the queue node before dropping the message: log_msg_drop()
+       * can release the last message reference, and queue nodes may be
+       * embedded in LogMessage storage.
+       */
       log_msg_free_queue_node(node);
+      log_msg_drop(msg, &path_options, AT_PROCESSED);
 
       dropped++;
     }
