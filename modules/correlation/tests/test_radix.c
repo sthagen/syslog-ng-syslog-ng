@@ -1038,6 +1038,11 @@ _get_test_radix_search_matches_params(gsize *len)
       .key = "[AAA]  ",
       .expected_pattern = {"q", "AAA", "s", "  ", NULL},
     },
+    {
+      .node_to_insert = {"@QSTRING:q:[]@@OPTIONALSET:s: @", NULL},
+      .key = "[AAA]",
+      .expected_pattern = {"q", "AAA", "s", "", NULL},
+    },
     /* test_mcaddr_matches */
     {
       .node_to_insert = {"@MACADDR:macaddr@", NULL},
