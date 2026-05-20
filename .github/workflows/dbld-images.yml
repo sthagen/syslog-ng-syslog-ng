@@ -44,7 +44,6 @@ jobs:
         image:
           # dbld docker images only
           - almalinux-8
-          - almalinux-9
           - almalinux-10
           - centos-stream9
           - centos-stream10
@@ -70,6 +69,7 @@ jobs:
           - rhel-9
           - rhel-10
           # dbld docker image + binary packages + docker binary
+          - almalinux-9
           - debian-trixie
         arch:
           - amd64

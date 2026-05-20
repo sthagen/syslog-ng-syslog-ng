@@ -104,8 +104,14 @@ RUN set -eu -o pipefail && \
     fi && \
     dnf -y install --setopt=install_weak_deps=False \
         $SYSLOG_PKGS jemalloc && \
+    # dnf-plugins-core was only needed to flip CRB on; drop it again so it
+    # doesn't bloat the runtime image. EPEL / CRB repo metadata is kept so
+    # the user can still `dnf install` extras downstream.
+    dnf -y remove dnf-plugins-core && \
     dnf clean all && \
-    rm -rf /var/cache/dnf /var/cache/yum
+    rm -rf /var/cache/dnf /var/cache/yum \
+           /var/log/dnf* /var/log/hawkey.log \
+           /tmp/* /var/tmp/*
 
 #
 # Preload jemalloc into the syslog-ng service via a systemd drop-in.

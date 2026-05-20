@@ -33,12 +33,25 @@ jobs:
             false
           fi
 
-  publish-docker-image:
+  publish-docker-image-deb:
     needs: pre-check
     uses: ./.github/workflows/publish-docker-image.yml
     with:
       pkg-type: ${{ inputs.pkg-type }}
       pkg-version: ${{ inputs.pkg-version }}
+      pkg-image-type: deb
+      pkg-push: ${{ inputs.pkg-push }}
+    secrets:
+      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub-password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+  publish-docker-image-rpm:
+    needs: pre-check
+    uses: ./.github/workflows/publish-docker-image.yml
+    with:
+      pkg-type: ${{ inputs.pkg-type }}
+      pkg-version: ${{ inputs.pkg-version }}
+      pkg-image-type: rpm
       pkg-push: ${{ inputs.pkg-push }}
     secrets:
       dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}

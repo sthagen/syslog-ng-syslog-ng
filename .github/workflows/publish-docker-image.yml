@@ -9,15 +9,14 @@ on:
       pkg-version:
         required: false
         type: string # <MAJOR>.<MINOR>.<PATCH>
-      apt-pkg-version:
+      pkg-version-lock:
         required: false
         type: string # Exact package version to install (e.g., 4.5.0-1), empty for latest
-        description: "Lock to specific package version for reproducible builds with updated base images"
-      base-image:
-        required: false
-        type: string # Base docker image (e.g., debian:trixie, ubuntu:24.04)
-        default: "debian:trixie"
-        description: "Base OS Docker image - update this to rebuild with latest base image"
+        description: "Lock to a specific package version (e.g., 4.5.0-1) for reproducible rebuilds (APT or RPM, per pkg-image-type)"
+      pkg-image-type:
+        required: true
+        type: string # deb / rpm
+        description: "Packaging flavor: 'deb' (Debian trixie + balabit/syslog-ng) or 'rpm' (AlmaLinux 9 + balabit/syslog-ng-rpm)"
       pkg-push:
         required: false
         type: boolean
@@ -40,29 +39,35 @@ on:
         required: true
         type: string
         description: "syslog-ng version tag (e.g., 4.5.0)"
-      apt-pkg-version:
+      pkg-version-lock:
         required: false
         type: string
-        description: "Lock to specific package version (e.g., 4.5.0-1) for reproducible rebuilds"
-      base-image:
-        required: false
-        type: string
-        default: "debian:trixie"
-        description: "Base OS Docker image (e.g., debian:trixie, ubuntu:24.04)"
+        description: "Lock to a specific package version (e.g., 4.5.0-1) for reproducible rebuilds (APT or RPM, per pkg-image-type)"
+      pkg-image-type:
+        required: true
+        type: choice
+        options:
+          - deb
+          - rpm
+        default: "deb"
+        description: "Packaging flavor: 'deb' (Debian trixie + balabit/syslog-ng) or 'rpm' (AlmaLinux 9 + balabit/syslog-ng-rpm)"
       pkg-push:
         required: true
         type: boolean
         default: false
         description: "Push to Docker Hub (uncheck (use false) for testing)"
 
-env:
-  DOCKER_IMAGE_NAME: balabit/syslog-ng
-
 jobs:
   publish-docker-image:
-    name: Publish syslog-ng Docker image
+    name: Publish syslog-ng Docker image (${{ inputs.pkg-image-type }})
     if: github.repository_owner == 'syslog-ng'
     runs-on: ubuntu-latest
+    env:
+      # Map the public pkg-image-type input to the fixed internal build parameters.
+      # Keeping these here (instead of as separate inputs) ensures callers cannot
+      # accidentally produce non-shipping combinations.
+      DOCKER_IMAGE_NAME: ${{ inputs.pkg-image-type == 'rpm' && 'balabit/syslog-ng-rpm' || 'balabit/syslog-ng' }}
+      BASE_IMAGE: ${{ inputs.pkg-image-type == 'rpm' && 'almalinux:9' || 'debian:trixie' }}
     steps:
       - name: Checkout syslog-ng source
         uses: actions/checkout@v4
@@ -151,18 +156,19 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: docker/
+          file: docker/syslog-ng.${{ inputs.pkg-image-type }}.dockerfile
           tags: ${{ steps.tags.outputs.TAGS }}
           platforms: linux/amd64,linux/arm64
           # TODO: Add proper build-args generation
           # This simple task is actually would require a pretty complex change, with a matrix strategy, and merging results of multiple generated images
           # See https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
           # So, as we are lucky, and these required only once, and only in a RUN docker command that can be dynamic
-          # now generating these in the ${SRC_ROOT}/docker/Dockerfile based on the runner architecture (platforms: linux/amd64,linux/arm64)
+          # now generating these in the ${SRC_ROOT}/docker/syslog-ng.deb.dockerfile based on the runner architecture (platforms: linux/amd64,linux/arm64)
           #build-args: PKG_TYPE=${{ inputs.pkg-type }} BASE_IMAGE=${{ matrix. }} CONTAINER_ARCH=${{ matrix. }} CONTAINER_NAME_SUFFIX=${{ matrix. }}
           build-args: |
             PKG_TYPE=${{ inputs.pkg-type }}
-            BASE_IMAGE=${{ inputs.base-image || 'debian:trixie' }}
-            APT_PACKAGE_VERSION=${{ inputs.apt-pkg-version || '' }}
+            BASE_IMAGE=${{ env.BASE_IMAGE }}
+            PACKAGE_VERSION=${{ inputs.pkg-version-lock || '' }}
           push: ${{ inputs.pkg-push }}
 
       - name: Scan docker image on CVEs (CRITICAL,HIGH to a sarif file) # https://aquasecurity.github.io/trivy/v0.54/docs/

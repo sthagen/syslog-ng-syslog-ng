@@ -29,4 +29,7 @@ export LD_PRELOAD="/usr/lib/${ARCH}-linux-gnu/libjemalloc.so.2"
 echo; set; echo
 
 echo "Starting syslog-ng with params: $@"
-/usr/sbin/syslog-ng -F $@
+# exec so that syslog-ng becomes PID 1 and receives signals from
+# `docker stop` directly (instead of going through bash, which would
+# swallow them and break graceful shutdown).
+exec /usr/sbin/syslog-ng -F "$@"

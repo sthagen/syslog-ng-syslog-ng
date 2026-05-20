@@ -91,7 +91,14 @@ RUN ARCH=$(arch) && \
   apt-get install -y \
     libdbd-mysql libdbd-pgsql libdbd-sqlite3 libjemalloc2 \
     $SYSLOG_PKGS \
-  && rm -rf /var/lib/apt/lists/*
+  && \
+  # Drop build-only tooling (and anything pulled in transitively) plus apt /
+  # debconf caches and logs so the final image stays as lean as possible.
+  # ca-certificates is intentionally kept — syslog-ng needs the trust store
+  # at runtime for TLS destinations.
+  apt-get purge -y --auto-remove wget gnupg2 lz4 \
+  && rm -rf /var/lib/apt/lists/* /var/log/apt/* /var/log/dpkg.log \
+            /var/cache/debconf/*-old /tmp/* /var/tmp/*
 
 COPY syslog-ng.conf /etc/syslog-ng/syslog-ng.conf
 
