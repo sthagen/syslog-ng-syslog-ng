@@ -333,14 +333,65 @@ official [third party page][3rd-party].
 
 ## Installation from Docker image
 
-Binaries are also available as a [Docker image](https://hub.docker.com/r/balabit/syslog-ng). You can get:
-- the latest official release with
+Two flavors of the official syslog-ng image are published:
 
-  `docker pull balabit/syslog-ng:latest`
+| Image | Base | Init model | Tag |
+|---|---|---|---|
+| [`balabit/syslog-ng`](https://hub.docker.com/r/balabit/syslog-ng)         | Debian (trixie)  | `syslog-ng -F` as PID 1 (entrypoint wrapper) | `latest` / `nightly` |
+| [`balabit/syslog-ng-rpm`](https://hub.docker.com/r/balabit/syslog-ng-rpm) | AlmaLinux 9      | `systemd` as PID 1, syslog-ng as a service   | `latest` / `nightly` |
 
-- the latest developer nigthly build with
+Both images include every published syslog-ng module subpackage (Java-based modules excluded to keep the image lean).
 
-  `docker pull balabit/syslog-ng:nightly`
+### Debian-based image (`balabit/syslog-ng`)
+
+```shell
+# Latest official release
+docker pull balabit/syslog-ng:latest
+
+# Latest developer nightly build
+docker pull balabit/syslog-ng:nightly
+
+# Run (syslog-ng is PID 1 — standard docker run is enough)
+docker run -d --name syslog-ng \
+    -p 514:514/udp -p 601:601/tcp -p 6514:6514/tcp \
+    balabit/syslog-ng:latest
+```
+
+### AlmaLinux / systemd-based image (`balabit/syslog-ng-rpm`)
+
+The RPM image runs `systemd` as PID 1 and manages `syslog-ng` as a regular systemd service. systemd-in-container needs a writable cgroup hierarchy and a tmpfs `/run`, so the `docker run` invocation is different from the Debian image:
+
+```shell
+# Latest official release
+docker pull balabit/syslog-ng-rpm:latest
+
+# Latest developer nightly build
+docker pull balabit/syslog-ng-rpm:nightly
+
+# Run (Linux host with cgroup v2)
+docker run -d --name syslog-ng-rpm \
+    --privileged --cgroupns=host \
+    -p 514:514/udp -p 601:601/tcp -p 6514:6514/tcp \
+    balabit/syslog-ng-rpm:latest
+
+# Run (Docker Desktop on macOS / Windows — add explicit tmpfs and cgroup mounts)
+docker run -d --name syslog-ng-rpm \
+    --privileged --cgroupns=host \
+    --tmpfs /run --tmpfs /run/lock \
+    -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+    -e SYSTEMD_LOG_TARGET=console \
+    -p 514:514/udp -p 601:601/tcp -p 6514:6514/tcp \
+    balabit/syslog-ng-rpm:latest
+
+# Inspect / control syslog-ng inside the container
+docker exec -it syslog-ng-rpm systemctl status syslog-ng
+docker exec -it syslog-ng-rpm syslog-ng-ctl stats
+```
+
+> **Note:** `systemd` logs to the journal, not to container stdout. Use `docker exec <container> journalctl -u syslog-ng` to read syslog-ng's startup logs (or set `-e SYSTEMD_LOG_TARGET=console` to route systemd's own messages to stdout for debugging).
+
+For build instructions and additional run examples, see [docker/README.md](docker/README.md).
+
 
 ## Documentation
 

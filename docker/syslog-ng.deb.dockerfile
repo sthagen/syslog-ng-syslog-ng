@@ -33,7 +33,7 @@ LABEL org.opencontainers.image.source="https://github.com/syslog-ng/syslog-ng"
 # redeclare ARGs so they are available after FROM
 ARG BASE_IMAGE
 ARG PKG_TYPE=stable
-ARG APT_PACKAGE_VERSION
+ARG PACKAGE_VERSION
 ARG CONTAINER_ARCH=amd64
 ARG CONTAINER_NAME_SUFFIX
 
@@ -43,7 +43,8 @@ RUN apt-get update -qq && \
     apt-get install -y \
         wget \
         ca-certificates \
-        gnupg2 && \
+        gnupg2 \
+        lz4 && \
     rm -rf /var/lib/apt/lists/*
 
 # See .github/workflows/publish-docker-image.yml for why cannot use the ARG versions of these here currenty.
@@ -59,17 +60,45 @@ RUN ARCH=$(arch) && \
   wget -qO - https://ose-repo.syslog-ng.com/apt/syslog-ng-ose-pub.asc | gpg --dearmor -o /usr/share/keyrings/ose-repo-archive-keyring.gpg && \
   echo "deb [signed-by=/usr/share/keyrings/ose-repo-archive-keyring.gpg arch=$CONTAINER_ARCH] https://ose-repo.syslog-ng.com/apt/ ${PKG_TYPE} ${DISTRO}-${CODENAME}$CONTAINER_NAME_SUFFIX" | tee --append /etc/apt/sources.list.d/syslog-ng-ose.list && \
   apt-get update -qq && \
-  if [ -n "$APT_PACKAGE_VERSION" ]; then \
-    echo "Installing locked syslog-ng version: $APT_PACKAGE_VERSION"; \
-    SYSLOG_PKG="syslog-ng=${APT_PACKAGE_VERSION}"; \
+  # Enumerate the base package + every published syslog-ng-mod-* package
+  # directly from the OSE repository's Packages index (NOT via apt-cache
+  # search, which would also match same-named packages in Debian's own
+  # repos and could drag in module packages OSE doesn't ship).
+  # Java-related modules (java, java-common-lib, hdfs) are excluded to keep
+  # the image lean — pulling OpenJDK would roughly double the image size.
+  # Modern apt downloads Packages.lz4, so we decompress with lz4cat.
+  OSE_PKGS_FILE="$(ls /var/lib/apt/lists/ose-repo.syslog-ng.com_*_dists_${PKG_TYPE}_${DISTRO}-${CODENAME}${CONTAINER_NAME_SUFFIX}_binary-${CONTAINER_ARCH}_Packages* 2>/dev/null | head -n1)" && \
+  [ -n "$OSE_PKGS_FILE" ] && [ -r "$OSE_PKGS_FILE" ] || { echo "ERROR: OSE Packages index not found under /var/lib/apt/lists/" >&2; ls /var/lib/apt/lists/ >&2; exit 1; } && \
+  echo "Using OSE Packages index: $OSE_PKGS_FILE" && \
+  case "$OSE_PKGS_FILE" in \
+    *.lz4) CAT=lz4cat ;; \
+    *.gz)  CAT=zcat ;; \
+    *.xz)  CAT=xzcat ;; \
+    *)     CAT=cat ;; \
+  esac && \
+  SYSLOG_PKGS="$($CAT "$OSE_PKGS_FILE" \
+      | awk '/^Package: / { print $2 }' \
+      | grep -E '^(syslog-ng|syslog-ng-mod-.*)$' \
+      | grep -Ev '^syslog-ng-mod-(java|java-common-lib|hdfs)$' \
+      | sort -u)" && \
+  if [ -z "$SYSLOG_PKGS" ]; then echo "ERROR: no syslog-ng packages found in OSE Packages index" >&2; exit 1; fi && \
+  if [ -n "$PACKAGE_VERSION" ]; then \
+    echo "Installing locked syslog-ng version: $PACKAGE_VERSION"; \
+    SYSLOG_PKGS="$(echo "$SYSLOG_PKGS" | sed "s/\$/=${PACKAGE_VERSION}/")"; \
   else \
-    echo "Installing latest syslog-ng version"; \
-    SYSLOG_PKG="syslog-ng"; \
+    echo "Installing latest syslog-ng version (all modules)"; \
   fi && \
   apt-get install -y \
     libdbd-mysql libdbd-pgsql libdbd-sqlite3 libjemalloc2 \
-    ${SYSLOG_PKG} \
-  && rm -rf /var/lib/apt/lists/*
+    $SYSLOG_PKGS \
+  && \
+  # Drop build-only tooling (and anything pulled in transitively) plus apt /
+  # debconf caches and logs so the final image stays as lean as possible.
+  # ca-certificates is intentionally kept — syslog-ng needs the trust store
+  # at runtime for TLS destinations.
+  apt-get purge -y --auto-remove wget gnupg2 lz4 \
+  && rm -rf /var/lib/apt/lists/* /var/log/apt/* /var/log/dpkg.log \
+            /var/cache/debconf/*-old /tmp/* /var/tmp/*
 
 COPY syslog-ng.conf /etc/syslog-ng/syslog-ng.conf
 

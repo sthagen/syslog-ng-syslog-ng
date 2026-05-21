@@ -1,5 +1,8 @@
 name: Trigger Publish Docker image
 
+permissions:
+  contents: read
+  security-events: write
 
 on:
   workflow_call:
@@ -21,6 +24,11 @@ on:
         required: false
         type: boolean
         default: false
+      update-dockerhub-description:
+        description: "Update Docker Hub repository overview from docker/dockerhub-overview-<type>.md"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   pre-check:
@@ -33,13 +41,28 @@ jobs:
             false
           fi
 
-  publish-docker-image:
+  publish-docker-image-deb:
     needs: pre-check
     uses: ./.github/workflows/publish-docker-image.yml
     with:
       pkg-type: ${{ inputs.pkg-type }}
       pkg-version: ${{ inputs.pkg-version }}
+      pkg-image-type: deb
       pkg-push: ${{ inputs.pkg-push }}
+      update-dockerhub-description: ${{ inputs.update-dockerhub-description }}
+    secrets:
+      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub-password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+  publish-docker-image-rpm:
+    needs: pre-check
+    uses: ./.github/workflows/publish-docker-image.yml
+    with:
+      pkg-type: ${{ inputs.pkg-type }}
+      pkg-version: ${{ inputs.pkg-version }}
+      pkg-image-type: rpm
+      pkg-push: ${{ inputs.pkg-push }}
+      update-dockerhub-description: ${{ inputs.update-dockerhub-description }}
     secrets:
       dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
       dockerhub-password: ${{ secrets.DOCKERHUB_PASSWORD }}
