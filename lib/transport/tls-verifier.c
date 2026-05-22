@@ -175,7 +175,7 @@ tls_wildcard_match(const gchar *host_name, const gchar *pattern)
 gboolean
 tls_verify_certificate_name(X509 *cert, const gchar *host_name)
 {
-  gchar pattern_buf[256];
+  gchar pattern_buf[256] = "";
   gint ext_ndx;
   gboolean found = FALSE, result = FALSE;
 
@@ -205,9 +205,8 @@ tls_verify_certificate_name(X509 *cert, const gchar *host_name)
 
                   if (dnsname_len > sizeof(pattern_buf) - 1)
                     {
-                      found = TRUE;
-                      result = FALSE;
-                      break;
+                      /* skip this oversized SAN entry, but keep checking the rest */
+                      continue;
                     }
 
                   memcpy(pattern_buf, dnsname, dnsname_len);
@@ -219,9 +218,16 @@ tls_verify_certificate_name(X509 *cert, const gchar *host_name)
               else if (gen_name->type == GEN_IPADD)
                 {
                   gchar dotted_ip[64] = {0};
-                  int addr_family = AF_INET;
-                  if (ASN1_STRING_length(gen_name->d.iPAddress) == 16)
+                  /* only 4 (IPv4) and 16 (IPv6) byte payloads are valid; skip malformed entries
+                   * to avoid feeding inet_ntop a mismatched source size */
+                  gsize ip_len = ASN1_STRING_length(gen_name->d.iPAddress);
+                  int addr_family;
+                  if (ip_len == 4)
+                    addr_family = AF_INET;
+                  else if (ip_len == 16)
                     addr_family = AF_INET6;
+                  else
+                    continue;
 
                   if (inet_ntop(addr_family, ASN1_STRING_get0_data(gen_name->d.iPAddress), dotted_ip, sizeof(dotted_ip)))
                     {
@@ -238,9 +244,7 @@ tls_verify_certificate_name(X509 *cert, const gchar *host_name)
     {
       /* hmm. there was no subjectAltName (this is deprecated, but still
        * widely used), look up the Subject, most specific CN */
-      X509_NAME *name;
-
-      name = X509_get_subject_name(cert);
+      X509_NAME *name = X509_get_subject_name(cert);
       if (X509_NAME_get_text_by_NID(name, NID_commonName, pattern_buf, sizeof(pattern_buf)) != -1)
         {
           result = tls_wildcard_match(host_name, pattern_buf);
