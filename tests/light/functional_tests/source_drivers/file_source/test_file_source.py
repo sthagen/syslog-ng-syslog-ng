@@ -114,13 +114,20 @@ def validate_output(output_file, expected):
     with open(output_file, 'r') as f:
         output_lines = f.readlines()
 
-    assert len(output_lines) == len(expected), \
-        f"Expected {len(expected)} messages, got {len(output_lines)}"
+    # Count occurrences of each message in both expected and actual output
+    from collections import Counter
+    expected_counts = Counter(expected)
+    actual_counts = Counter()
 
-    # Check that all expected messages appear
-    for msg in set(expected):
-        found = any(msg in line for line in output_lines)
-        assert found, f"Expected message '{msg}' not found in output"
+    for line in output_lines:
+        for msg in expected_counts:
+            if msg in line:
+                actual_counts[msg] += 1
+                break  # Each line should match only one message
+
+    # Verify counts match for each message
+    assert actual_counts == expected_counts, \
+        f"Message counts mismatch.\nExpected: {dict(expected_counts)}\nActual: {dict(actual_counts)}"
 
 
 # Test wildcard-file source with non-recursive directory scanning.

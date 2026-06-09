@@ -74,13 +74,6 @@ def create_files_with_messages(file_paths, messages):
     return expected
 
 
-def validate_messages_present(output_lines, messages):
-    """Validate that expected messages are present in output."""
-    for msg in messages:
-        found = any(msg in line for line in output_lines)
-        assert found, f"Expected message '{msg}' not found in output"
-
-
 def validate_messages_absent(output_lines, messages):
     """Validate that excluded messages are NOT present in output."""
     for msg in messages:
@@ -135,12 +128,20 @@ def test_excluded_files(config, syslog_ng):
     with open(OUTPUT_FILE, 'r') as f:
         output_lines = f.readlines()
 
-    # Should have all included messages
-    assert len(output_lines) == len(expected), \
-        f"Expected {len(expected)} messages, got {len(output_lines)}"
+    # Count per-message occurrences to catch imbalanced distributions
+    from collections import Counter
+    expected_counts = Counter(expected)
+    actual_counts = Counter()
 
-    # Included messages should be present
-    validate_messages_present(output_lines, included_messages)
+    for line in output_lines:
+        for msg in expected_counts:
+            if msg in line:
+                actual_counts[msg] += 1
+                break
+
+    # Verify exact per-message counts
+    assert actual_counts == expected_counts, \
+        f"Message counts mismatch.\nExpected: {dict(expected_counts)}\nActual: {dict(actual_counts)}"
 
     # Excluded messages should NOT be present
     validate_messages_absent(output_lines, excluded_messages)
