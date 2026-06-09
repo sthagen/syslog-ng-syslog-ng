@@ -26,11 +26,11 @@ import re
 import shutil
 import sqlite3  # noqa: F401 - Used later for DB validation
 import sys
-import time
 from socket import AF_INET
 
 import pytest
 
+from src.common.blocking import wait_until_true
 from src.message_senders import SocketSender
 
 
@@ -88,24 +88,40 @@ def check_sql_expected(db_path, table, expected_messages):
     cursor = conn.cursor()
 
     try:
-        # Query all rows from the table
-        cursor.execute(f"SELECT date, host, program, pid, msg FROM {table}")
-        rows = cursor.fetchall()
+        # Query all rows from the table (return False if table doesn't exist yet)
+        try:
+            cursor.execute(f"SELECT date, host, program, pid, msg FROM {table}")
+            rows = cursor.fetchall()
+        except sqlite3.OperationalError:
+            return False
 
-        # Build a simple check: count messages that match the msg pattern
-        # Expected format: message session/counter ...
-        found_count = 0
+        # The message payload format produced by MessageSender is:
+        #   "<msg> <SSS>/<IIIII> ..."
+        # For each (msg, session) group we must observe ids 1..count-1 exactly
+        # once, with no missing, duplicated, or unexpected (msg, session) groups
+        # (mirrors the original tests/functional/messagecheck.py::check_contents
+        # semantics, minus in-stream ordering since SQL rows are unordered).
+        payload_re = re.compile(r"(\S+) (\d+)/(\d+)")
+        seen: dict[tuple[str, int], set[int]] = {}
+        for row in rows:
+            msg_field = row[4]
+            m = payload_re.search(msg_field)
+            if not m:
+                return False
+            msg, session, msg_id = m.group(1), int(m.group(2)), int(m.group(3))
+            ids = seen.setdefault((msg, session), set())
+            if msg_id in ids:
+                return False
+            ids.add(msg_id)
+
         for expected_msg, session_counter, expected_count in expected_messages:
-            # Count rows where msg contains the expected message pattern
-            matching = [
-                row for row in rows
-                if expected_msg in row[4] and f"{session_counter:03d}" in row[4]  # msg column and session counter
-            ]
-            # -1 because MessageSender uses range(1, count)
-            if len(matching) >= (expected_count - 1):
-                found_count += 1
+            ids = seen.pop((expected_msg, session_counter), None)
+            if ids is None:
+                return False
+            if ids != set(range(1, expected_count)):
+                return False
 
-        return found_count == len(expected_messages)
+        return len(seen) == 0
 
     finally:
         conn.close()
@@ -140,6 +156,7 @@ def test_sql(config, syslog_ng, port_allocator):
     """Test SQL destination with sqlite3 backend."""
     db_path = "test-sql.db"
     tcp_port = port_allocator()
+    dbi_driver_dir = os.path.dirname(find_libdbi_sqlite3())
 
     raw_config = f"""
 @version: {config.get_version()}
@@ -158,6 +175,7 @@ source s_tcp {{
 destination d_sql {{
     sql(type(sqlite3)
         database("{db_path}")
+        dbi_driver_dir("{dbi_driver_dir}")
         host(dummy) port(1234) username(dummy) password(dummy)
         table("logs")
         null("@NULL@")
@@ -186,8 +204,21 @@ log {{ source(s_tcp); destination(d_sql); }};
         for msg in messages:
             expected.extend(sender.sendMessages(msg, pri=7))
 
-    # Wait for messages to be written to database
-    time.sleep(10)
+    # MessageSender.sendMessages() loops range(1, repeat) -> count-1 actual messages per call.
+    expected_total = sum(count - 1 for _, _, count in expected)
 
-    # Check database contents
+    # Wait until afsql has committed every message. The `written` counter only
+    # advances after a successful COMMIT (LTR_SUCCESS), unlike `processed`, which
+    # is the input-side counter incremented when a message enters the worker queue
+    # (LTR_QUEUED on every batched insert before flush). Without this wait the
+    # final flush-timeout(100ms) batch can still be in flight when the DB is opened
+    # for validation.
+    stats_handler = config.stats_handler
+
+    def dst_written_all():
+        return stats_handler.get_stats("destination", "sql", "d_sql#0").get("written", 0) >= expected_total
+
+    assert wait_until_true(dst_written_all), "afsql did not commit all messages"
+
+    # Validate messages are in database
     assert check_sql_expected(db_path, "logs", expected)
