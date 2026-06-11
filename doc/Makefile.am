@@ -48,24 +48,14 @@ manpages += $(slog_manpages)
 endif
 
 # "dist" will always need the manpages (slog ones included)
-EXTRA_DIST += \
-		doc/man/dqtool.1 \
-		doc/man/loggen.1 \
-		doc/man/pdbtool.1 \
-		doc/man/persist-tool.1 \
-		doc/man/secure-logging.7 \
-		doc/man/slogencrypt.1 \
-		doc/man/slogkey.1 \
-		doc/man/slogverify.1 \
-		doc/man/syslog-ng.8 \
-		doc/man/syslog-ng.conf.5 \
-		doc/man/syslog-ng-ctl.1 \
-		doc/man/syslog-ng-debun.1
+EXTRA_DIST += $(manpages)
+if ENABLE_SLOG
+else
+EXTRA_DIST += $(slog_manpages)
+endif
 
 if ENABLE_MANPAGES_INSTALL
-
 man_MANS += $(manpages)
-
 endif
 
 if ENABLE_MANPAGES
