@@ -39,6 +39,11 @@ EXTRA_DIST += \
 	tests/light/src/message_builder/__init__.py \
 	tests/light/src/message_builder/log_message.py \
 	tests/light/src/message_builder/tests/__init__.py \
+	tests/light/src/message_senders/file_sender.py \
+	tests/light/src/message_senders/__init__.py \
+	tests/light/src/message_senders/message_sender.py \
+	tests/light/src/message_senders/README.md \
+	tests/light/src/message_senders/socket_sender.py \
 	tests/light/src/syslog_ng_config/__init__.py \
 	tests/light/src/syslog_ng_config/renderer.py \
 	tests/light/src/syslog_ng_config/statement_group.py \

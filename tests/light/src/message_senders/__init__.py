@@ -1,5 +1,7 @@
+#!/usr/bin/env python
 #############################################################################
-# Copyright (c) 2015 Balabit
+# Copyright (c) 2007-2010 Balabit
+# Copyright (c) 2026 OneIdentity
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License version 2 as published
@@ -19,29 +21,8 @@
 # COPYING for details.
 #
 #############################################################################
+from .file_sender import FileSender
+from .message_sender import MessageSender
+from .socket_sender import SocketSender
 
-from syslogng import LogDestination
-
-class DestTest(LogDestination):
-
-    def init(self, options):
-        return True
-
-    def deinit(self):
-        pass
-
-    def open(self):
-        return True
-
-    def close(self):
-        pass
-
-    def is_open(self):
-        return True
-
-    def send(self, msg):
-        with open('test-python.log', 'a') as f:
-            msg = dict(map(lambda entry: (entry[0], entry[1].decode()), msg.items()))
-            f.write('{DATE} {HOST} {MSGHDR}{MSG}\n'.format(**msg))
-
-        return True
+__all__ = ['MessageSender', 'FileSender', 'SocketSender']

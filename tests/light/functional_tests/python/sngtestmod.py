@@ -1,5 +1,5 @@
 #############################################################################
-# Copyright (c) 2007-2009 Balabit
+# Copyright (c) 2015 Balabit
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License version 2 as published
@@ -19,24 +19,40 @@
 # COPYING for details.
 #
 #############################################################################
+from syslogng import LogDestination
 
-import time
 
-def print_user(msg):
-    print('     %s %s' % (time.strftime('%Y-%m-%dT%H:%M:%S'), msg))
+class DestTest(LogDestination):
 
-def print_start(testcase):
-    print("\n\n##############################################")
-    print("### Starting testcase: %s" % testcase)
-    print("##############################################")
-    print_user("Testcase start")
+    def init(self, options):
+        return True
 
-def print_end(testcase, result):
-    print_user("Testcase end")
-    print("##############################################")
-    if result:
-        print("### PASS: %s" % testcase)
-    else:
-        print("### FAIL: %s" % testcase)
-    print("##############################################\n\n")
+    def deinit(self):
+        pass
 
+    def open(self):
+        return True
+
+    def close(self):
+        pass
+
+    def is_open(self):
+        return True
+
+    def send(self, msg):
+        with open('test-python.log', 'a') as f:
+            # Convert bytes to strings and handle missing fields
+            msg_dict = {
+                key: (value.decode() if isinstance(value, bytes) else value)
+                for key, value in msg.items()
+            }
+
+            # Get values with defaults for missing fields
+            date = msg_dict.get('DATE', '')
+            host = msg_dict.get('HOST', '')
+            msghdr = msg_dict.get('MSGHDR', '')
+            message = msg_dict.get('MSG', '')
+
+            f.write(f'{date} {host} {msghdr}{message}\n')
+
+        return True
