@@ -26,6 +26,7 @@ dist\.conf$
 .*/\.gradle
 scl/syslog-ng\.conf$
 docker/syslog-ng\.conf$
+docker/syslog-ng\.(deb|rpm)\.dockerfile$
 tests/copyright/policy$
 (syslog-ng-)?config\.h$
 lib/cfg-lex\.[ch]$
@@ -38,7 +39,6 @@ Mk
 doc/man
 (_configs\.sed|\.project|\.cproject|config\.status)$
 stamp-h1$
-tests/functional/test\.conf$
 scripts/update-patterndb$
 (contrib|debian)
 packaging/debian
@@ -291,7 +291,6 @@ tests/light/functional_tests/destination_drivers/file_destination/test_logrotate
 news/create-newsfile.py
 news/next-pr-id.py
 dev-utils/plugin_skeleton_creator/create_plugin.sh
-tests/functional
 tests/unit
 tests/valgrind
 tests/build-log-cflags-propagation.sh
@@ -318,6 +317,5 @@ modules/http/http-parser.c
 modules/http/http-grammar.ym
 modules/correlation/group-lines.c
 modules/python-modules/syslogng/modules/webhook/source.py
-docker/Dockerfile
 docker/entrypoint.sh
 Doxyfile

@@ -24,7 +24,6 @@ on:
           # These are also built if distros is set from outside when invoked via the packages.yml workflow,
           # but not used for docker or binary packages publishing, when invoked from the (nightly|draft|stable)-release.yml workflows
           #   "almalinux-8",
-          #   "almalinux-9",
           #   "centos-stream9",
           #   "centos-stream10",
           #   "fedora-latest",
@@ -41,10 +40,12 @@ on:
             "ubuntu-jammy",
             "ubuntu-noble",
             "ubuntu-plucky",
+            "ubuntu-resolute",
             "rhel-8",
             "rhel-9",
             "rhel-10",
 
+            "almalinux-9",
             "debian-trixie",
           ]'
 

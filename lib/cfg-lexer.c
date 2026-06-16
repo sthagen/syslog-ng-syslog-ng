@@ -745,11 +745,7 @@ gboolean
 cfg_lexer_include_buffer_without_backtick_substitution(CfgLexer *self, const gchar *name,
                                                        const gchar *buffer, gsize length)
 {
-  CfgIncludeLevel *level;
-
-  g_assert(length >= 0);
-
-  level = cfg_lexer_alloc_include_level(self, name);
+  CfgIncludeLevel *level = cfg_lexer_alloc_include_level(self, name);
   if (!level)
     return FALSE;
   cfg_lexer_init_include_level_buffer(self, level, name, buffer, length);
@@ -850,7 +846,7 @@ cfg_lexer_find_generator_plugin(CfgLexer *self, GlobalConfig *cfg, gint context,
 static CFG_STYPE
 cfg_lexer_copy_token(const CFG_STYPE *original)
 {
-  CFG_STYPE dest;
+  CFG_STYPE dest = {0};
   int type = original->type;
   dest.type = type;
 

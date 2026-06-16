@@ -558,10 +558,12 @@ ptz_print_patterndb(GHashTable *clusters, const gchar *delimiters, gboolean name
 {
   char date[12], uuid_string[37];
   time_t currtime;
+  struct tm tm_buf;
 
   /* print the header */
   time(&currtime);
-  strftime(date, 12, "%Y-%m-%d", localtime(&currtime));
+  localtime_r(&currtime, &tm_buf);
+  strftime(date, 12, "%Y-%m-%d", &tm_buf);
   printf("<patterndb version='6' pub_date='%s'>\n", date);
   uuid_gen_random(uuid_string, sizeof(uuid_string));
 
@@ -584,6 +586,7 @@ ptz_load_file(Patternizer *self, gchar *input_file, gboolean no_parse, GError **
   MsgFormatOptions parse_options;
   gchar line[PTZ_MAXLINELEN];
   LogMessage *msg;
+  gboolean should_close_file = FALSE;
 
   if (!input_file)
     {
@@ -598,6 +601,7 @@ ptz_load_file(Patternizer *self, gchar *input_file, gboolean no_parse, GError **
           g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_IO, "Error opening input file %s", input_file);
           return FALSE;
         }
+      should_close_file = TRUE;
     }
   else
     {
@@ -624,6 +628,10 @@ ptz_load_file(Patternizer *self, gchar *input_file, gboolean no_parse, GError **
 
   self->support = (guint)(self->logs->len * (self->support_treshold / 100.0));
   msg_format_options_destroy(&parse_options);
+
+  if (should_close_file)
+    fclose(file);
+
   return TRUE;
 }
 
