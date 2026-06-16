@@ -62,7 +62,20 @@ jobs:
     with:
       pkg-type: stable
       pkg-version: ${{ needs.get-latest-version.outputs.version }}
-      base-image: "debian:trixie"
+      pkg-image-type: deb
+      pkg-push: true
+    secrets:
+      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub-password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+  publish-latest-rpm:
+    name: Publish Latest (RPM / AlmaLinux 9)
+    needs: get-latest-version
+    uses: ./.github/workflows/publish-docker-image.yml
+    with:
+      pkg-type: stable
+      pkg-version: ${{ needs.get-latest-version.outputs.version }}
+      pkg-image-type: rpm
       pkg-push: true
     secrets:
       dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}

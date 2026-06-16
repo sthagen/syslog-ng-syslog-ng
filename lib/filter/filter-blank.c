@@ -30,8 +30,14 @@ typedef struct _FilterBlank
   FilterExprNode super;
   const gchar *name;
   int name_len;
-  gboolean blank;
 } FilterBlank;
+
+typedef struct _FilterBlankCbData
+{
+  const gchar *name;
+  int name_len;
+  gboolean blank;
+} FilterBlankCbData;
 
 static gboolean
 is_blank(const gchar *value, int value_len, NVType type)
@@ -70,8 +76,7 @@ is_blank(const gchar *value, int value_len, NVType type)
 static gboolean
 check_if_value_is_set(NVHandle handle, const gchar *name, const gchar *value, gssize value_len, NVType type, gpointer u)
 {
-
-  FilterBlank *user_data = (FilterBlank *)u;
+  FilterBlankCbData *user_data = (FilterBlankCbData *)u;
 
   if (strncmp(name, user_data->name, user_data->name_len) == 0)
     {
@@ -98,9 +103,9 @@ filter_blank_eval(FilterExprNode *s, LogMessage **msgs, gint num_msg, LogTemplat
 
   LogMessage *msg = msgs[num_msg - 1];
 
-  self->blank = TRUE;
-  log_msg_values_foreach(msg, check_if_value_is_set, self);
-  return self->blank ^ s->comp;
+  FilterBlankCbData data = { .name = self->name, .name_len = self->name_len, .blank = TRUE };
+  log_msg_values_foreach(msg, check_if_value_is_set, &data);
+  return data.blank ^ s->comp;
 }
 
 FilterExprNode *

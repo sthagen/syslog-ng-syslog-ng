@@ -77,10 +77,21 @@ jobs:
   publish-docker-image:
     needs:
       - test-deb-packages
+    uses: ./.github/workflows/publish-docker-image.yml
+    with:
+      pkg-type: nightly
+      pkg-image-type: deb
+    secrets:
+      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub-password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+  publish-docker-image-rpm:
+    needs:
       - test-rpm-packages
     uses: ./.github/workflows/publish-docker-image.yml
     with:
       pkg-type: nightly
+      pkg-image-type: rpm
     secrets:
       dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
       dockerhub-password: ${{ secrets.DOCKERHUB_PASSWORD }}

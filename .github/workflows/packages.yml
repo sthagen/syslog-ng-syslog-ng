@@ -56,7 +56,6 @@ jobs:
       #   "opensuse-tumbleweed",
       distros: '[
         "almalinux-8",
-        "almalinux-9",
         "almalinux-10",
         "centos-stream9",
         "centos-stream10",
@@ -72,9 +71,11 @@ jobs:
         "ubuntu-jammy",
         "ubuntu-noble",
         "ubuntu-plucky",
+        "ubuntu-resolute",
         "rhel-8",
         "rhel-9",
         "rhel-10",
 
+        "almalinux-9",
         "debian-trixie",
         ]'

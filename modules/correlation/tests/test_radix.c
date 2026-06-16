@@ -272,6 +272,7 @@ Test(dbparser, test_parsers, .init = test_setup, .fini = test_teardown)
   insert_node(root, "AAA@SET:set@AAA");
   insert_node(root, "AAA@OPTIONALSET@AAA");
   insert_node(root, "AAA@OPTIONALSET:set@AAA");
+
   insert_node(root, "AAA@MACADDR@AAA");
   insert_node(root, "newline@NUMBER@\n2ndline\n");
   insert_node(root, "AAA@PCRE:set@AAA");
@@ -296,7 +297,8 @@ Test(dbparser, test_parsers, .init = test_setup, .fini = test_teardown)
   r_free_node(root, NULL);
 }
 
-ParameterizedTestParameters(dbparser, test_radix_search_matches)
+static RadixTestParam *
+_get_test_radix_search_matches_params(gsize *len)
 {
   static RadixTestParam parser_params[] =
   {
@@ -1005,6 +1007,12 @@ ParameterizedTestParameters(dbparser, test_radix_search_matches)
       .expected_pattern = {"set", "  ", NULL},
     },
     {
+      .node_to_insert = {"@SET:set:  @", NULL},
+      .key = "  ",
+      .expected_pattern = {"set", "  ", NULL},
+    },
+    /* test_optional_set_matches */
+    {
       .node_to_insert = {"@OPTIONALSET:set:  @", NULL},
       .key = " aaa",
       .expected_pattern = {"set", " ", NULL},
@@ -1018,6 +1026,22 @@ ParameterizedTestParameters(dbparser, test_radix_search_matches)
       .node_to_insert = {"@OPTIONALSET:set:  @", NULL},
       .key = "aaa",
       .expected_pattern = {"set", "", NULL},
+    },
+    {
+      .node_to_insert = {"@OPTIONALSET:set:  @", NULL},
+      .key = "  ",
+      .expected_pattern = {"set", "  ", NULL},
+    },
+    /* test_optional_set_matches at the end */
+    {
+      .node_to_insert = {"@QSTRING:q:[]@@OPTIONALSET:s: @", NULL},
+      .key = "[AAA]  ",
+      .expected_pattern = {"q", "AAA", "s", "  ", NULL},
+    },
+    {
+      .node_to_insert = {"@QSTRING:q:[]@@OPTIONALSET:s: @", NULL},
+      .key = "[AAA]",
+      .expected_pattern = {"q", "AAA", "s", "", NULL},
     },
     /* test_mcaddr_matches */
     {
@@ -1045,6 +1069,16 @@ ParameterizedTestParameters(dbparser, test_radix_search_matches)
       .node_to_insert = {"@EMAIL:email:[<]>@", NULL },
       .key = "[blint@balabit.hu]",
       .expected_pattern = {"email", "blint@balabit.hu", NULL},
+    },
+    {
+      .node_to_insert = {"@EMAIL:email:[<]>@", NULL },
+      .key = "a@b.c",
+      .expected_pattern = {"email", "a@b.c", NULL},
+    },
+    {
+      .node_to_insert = {"@EMAIL:email:[<]>@", NULL },
+      .key = "<a@b.c>",
+      .expected_pattern = {"email", "a@b.c", NULL},
     },
     /* test_hostname_matches */
     {
@@ -1126,18 +1160,30 @@ ParameterizedTestParameters(dbparser, test_radix_search_matches)
       .expected_pattern = {"nlstring", "foobar", NULL},
     }
   };
-  return cr_make_param_array(RadixTestParam, parser_params, G_N_ELEMENTS(parser_params));
+  *len = G_N_ELEMENTS(parser_params);
+  return parser_params;
 }
 
-ParameterizedTest(RadixTestParam *param, dbparser, test_radix_search_matches, .init = test_setup, .fini = test_teardown)
+/* Keep this as a plain Test + loop (not ParameterizedTest + ParameterizedTestParameters)
+ * the cases are pointer-based iovec entries, and we must avoid pointer payload transport through
+ * Criterion parameterization on macOS.
+ */
+Test(dbparser, test_radix_search_matches, .init = test_setup, .fini = test_teardown)
 {
-  RNode *root = r_new_node("", NULL);
+  gsize n_params;
+  RadixTestParam *params = _get_test_radix_search_matches_params(&n_params);
 
-  for (int i = 0; param->node_to_insert[i]; i++)
-    insert_node(root, param->node_to_insert[i]);
+  for (gsize param_index = 0; param_index < n_params; param_index++)
+    {
+      RadixTestParam *param = &params[param_index];
+      RNode *root = r_new_node("", NULL);
 
-  test_search_matches(root, param->key, param->expected_pattern);
-  r_free_node(root, NULL);
+      for (int i = 0; param->node_to_insert[i]; i++)
+        insert_node(root, param->node_to_insert[i]);
+
+      test_search_matches(root, param->key, param->expected_pattern);
+      r_free_node(root, NULL);
+    }
 }
 
 Test(dbparser, test_radix_prefix, .init = test_setup, .fini = test_teardown)

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: ["develop", "master"]
+    branches: [ "develop", "master" ]
   schedule:
     - cron: "00 21 * * *"
 
@@ -17,11 +17,11 @@ jobs:
     strategy:
       matrix:
         # https://github.com/marketplace/actions/freebsd-vm
-        release: ["15.0", "14.2"]
-        arch: [aarch64, amd64]
-        build-tool: [cmake, autotools]
-        compiler: [{ cpp: clang++, c: clang }] # , {cpp: g++, c: gcc}
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        release: [ "15.0", "14.2" ]
+        arch: [ aarch64, amd64 ]
+        build-tool: [ cmake, autotools ]
+        compiler: [ { cpp: clang++, c: clang } ] # , {cpp: g++, c: gcc}
+        runner: [ ubuntu-24.04, ubuntu-24.04-arm ]
         exclude:
           # Do not use mismatching runner and vm arch
           - runner: ubuntu-24.04
@@ -52,35 +52,46 @@ jobs:
           #THREADS=$(sysctl -n hw.ncpu) # TODO: Check how to get it on the FreeBSD VM
           BSDPORTS_PREFIX=/usr/local
           SYSLOG_NG_INSTALL_DIR="${HOME}/install/syslog-ng"
-          WARNING_FLAGS="-DNO_PTHREAD_SELF_USAGE_WARNING=1 -Wno-unused-command-line-argument" # FIXME: -Werror must be re-added
-          CFLAGS="-I${BSDPORTS_PREFIX}/include/ ${WARNING_FLAGS}"
+          WARNING_FLAGS="-DNO_PTHREAD_SELF_USAGE_WARNING=1 -Wno-unused-command-line-argument"
+          # All pkgconfig isses are fixed now, we do not have to use the BSDPORTS_PREFIX provided pats to point to the correct include path, but keep it here for reference
+          #CFLAGS="-I${BSDPORTS_PREFIX}/include/ ${WARNING_FLAGS}"
+          CFLAGS="${WARNING_FLAGS}"
           CXXFLAGS="${CFLAGS}"
-          LDFLAGS="-L${BSDPORTS_PREFIX}/lib"
-          # -DIVYKIS_SOURCE=internal is switched to system temporally as of https://github.com/buytenh/ivykis/pulls
+          # All pkgconfig isses are fixed now, we do not have to use the LDFLAGS to point to the correct library path, but keep it here for reference
+          #LDFLAGS="-L${BSDPORTS_PREFIX}/lib"
+          # FIXME: The autotools used libtool will invoke clang with -Werror even for linking, which causes
+          #        the build to fail when unsupported options passed to the linker (with unused command line arguments, which normally just warnings)
+          #        so, for now not providing --enable-werror for autotools builds
           CONFIGURE_FLAGS="
-            `[ $CC = clang ] && echo '--enable-force-gnu99' || true`
             --enable-colored-log
+            `[ $CC = clang ] && echo '--enable-force-gnu99' || true`
             --enable-extra-warnings
             --enable-debug
+            --disable-dependency-tracking
             --prefix=${SYSLOG_NG_INSTALL_DIR}
             --enable-tests
-            --disable-stackdump
+            --enable-stackdump
+            --enable-jemalloc
             --with-python=3
             --with-ivykis=internal
             --with-systemd-journal=no
+            --enable-slog
             --disable-java
             --disable-java-modules
           "
           CMAKE_CONFIGURE_FLAGS="
             `[ $CC = clang ] && echo '-DENABLE_FORCE_GNU99=ON' || true`
             -DENABLE_EXTRA_WARNINGS=ON
-            -DSUMMARY_LEVEL=1
+            -DENABLE_WERROR=ON
             -DCMAKE_BUILD_TYPE=Debug
+            -DSUMMARY_LEVEL=1
             -DCMAKE_INSTALL_PREFIX=${SYSLOG_NG_INSTALL_DIR}
-            -DBUILD_TESTING=ON
-            -DENABLE_STACKDUMP=OFF
+            -DENABLE_TESTING=ON
+            -DENABLE_STACKDUMP=ON
+            -DENABLE_JEMALLOC=ON
             -DPYTHON_VERSION=3
             -DIVYKIS_SOURCE=internal
+            -DENABLE_SLOG=ON
             -DENABLE_JOURNALD=OFF
             -DENABLE_JAVA=OFF
             -DENABLE_JAVA_MODULES=OFF
@@ -112,6 +123,36 @@ jobs:
 
           prepare: |
             #cat /etc/pkg/FreeBSD.conf
+
+            # Make any implicit pkg bootstrap (on fresh VMs where pkg is not yet
+            # installed) non-interactive.
+            export ASSUME_ALWAYS_YES=yes
+
+            # Workaround: the FreeBSD-ports "latest" catalogue is occasionally
+            # served in a corrupted state (seen mostly on the 15.0 VM image),
+            # which makes pkg fail with errors like:
+            #   "pkg: truncated reply for signature_fingerprints"
+            #   "Repository FreeBSD-ports cannot be opened. 'pkg update' required"
+            # and every subsequent `pkg install` cannot find any package.
+            # The "quarterly" branch is rebuilt less often and is unaffected,
+            # so when we detect the breakage we point FreeBSD-ports at quarterly
+            # for the rest of this job. Healthy runs keep the default repo.
+            if pkg update -f 2>&1 | tee /tmp/pkg-update.log | grep -q "truncated reply\|cannot be opened"; then
+              echo "Broken FreeBSD-ports catalogue detected; switching to the quarterly branch..."
+              mkdir -p /usr/local/etc/pkg/repos
+              cat > /usr/local/etc/pkg/repos/FreeBSD.conf <<'EOF'
+            FreeBSD: {
+              url: "pkg+http://pkg.FreeBSD.org/${ABI}/quarterly",
+              mirror_type: "srv",
+              signature_type: "fingerprints",
+              fingerprints: "/usr/share/keys/pkg",
+              enabled: yes
+            }
+            EOF
+              pkg update -f
+            else
+              echo "pkg catalogue OK; using default repo configuration."
+            fi
 
             pkg install -y autoconf autoconf-archive automake bison cmake flex git gperf glib json-c libtool pcre2 pkgconf gradle grpc hiredis libdbi libdbi-drivers libmaxminddb libnet libpaho-mqtt3 librdkafka libesmtp mongo-c-driver net-snmp openjdk25 rabbitmq-c riemann-c-client
             # For testing
@@ -147,13 +188,31 @@ jobs:
           cmake --install-prefix "${SYSLOG_NG_INSTALL_DIR}" -B build . ${CMAKE_CONFIGURE_FLAGS}
           cmake --build ./build -j ${THREADS}  --target install
 
-          "${SYSLOG_NG_INSTALL_DIR}/sbin/syslog-ng" -FdevtV 2>&1 |sort
+          echo ""
+          echo "Checking produced installation..."
+          "${SYSLOG_NG_INSTALL_DIR}/sbin/syslog-ng" -FdevtV > syslog-ng.unsorted.log 2>&1
+          sort syslog-ng.unsorted.log > syslog-ng.log
+
+          cat syslog-ng.log
+          # Check for failing modules
+          if grep -q "Error opening plugin module;" syslog-ng.log; then
+            echo "Modules failing to load:"
+            grep "Error opening plugin module;" syslog-ng.log
+            exit 1
+          fi
+
+          MALLOC_CONF=stats_print:true "${SYSLOG_NG_INSTALL_DIR}/sbin/syslog-ng" -V 2>&1 | grep -A50 "jemalloc"
 
       - name: cmake check
         if: matrix.build-tool == 'cmake'
         shell: freebsd {0}
         run: |
           cd $GITHUB_WORKSPACE; pwd
+
+          # Run the bundled ivykis self-tests too. syslog-ng's own
+          # `check` target does not recurse into the ivykis
+          # ExternalProject
+          make -C build/ivykis-install/src/IVYKIS-build check -j ${THREADS}
 
           cmake --build ./build -j ${THREADS} --target check
 
@@ -175,16 +234,34 @@ jobs:
           ./autogen.sh
           mkdir build
           cd build
-          ../configure --disable-dependency-tracking --disable-colored-log ${CONFIGURE_FLAGS}
+          ../configure ${CONFIGURE_FLAGS}
           cd ..
           /usr/local/bin/gmake -C build install -j ${THREADS}
 
-          "${SYSLOG_NG_INSTALL_DIR}/sbin/syslog-ng" -FdevtV 2>&1 |sort
+          echo ""
+          echo "Checking produced installation..."
+          "${SYSLOG_NG_INSTALL_DIR}/sbin/syslog-ng" -FdevtV > syslog-ng.unsorted.log 2>&1
+          sort syslog-ng.unsorted.log > syslog-ng.log
+
+          cat syslog-ng.log
+          # Check for failing modules
+          if grep -q "Error opening plugin module;" syslog-ng.log; then
+            echo "Modules failing to load:"
+            grep "Error opening plugin module;" syslog-ng.log
+            exit 1
+          fi
+
+          MALLOC_CONF=stats_print:true "${SYSLOG_NG_INSTALL_DIR}/sbin/syslog-ng" -V 2>&1 | grep -A50 "jemalloc"
 
       - name: autotools check
         if: matrix.build-tool == 'autotools'
         shell: freebsd {0}
         run: |
           cd $GITHUB_WORKSPACE; pwd
+
+          # Run the bundled ivykis self-tests too. syslog-ng's own
+          # `make check` does not recurse into lib/ivykis (it is in
+          # DIST_SUBDIRS, not SUBDIRS)
+          /usr/local/bin/gmake -C build/lib/ivykis check -j ${THREADS}
 
           /usr/local/bin/gmake -C build check -j ${THREADS}

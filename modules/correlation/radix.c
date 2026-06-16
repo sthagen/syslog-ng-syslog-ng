@@ -287,7 +287,8 @@ r_parser_set(gchar *str, gint *len, const gchar *param, gpointer state, RParserM
   if (!param)
     return FALSE;
 
-  while (strchr(param, str[*len]))
+  /* Guard against matching '\0' via strchr(param, '\0'). */
+  while (str[*len] && strchr(param, str[*len]))
     (*len)++;
 
   if (*len > 0)
@@ -315,8 +316,11 @@ r_parser_email(gchar *str, gint *len, const gchar *param, gpointer state, RParse
   *len = 0;
 
   if (param)
-    while (strchr(param, str[*len]))
-      (*len)++;
+    {
+      /* Guard against matching '\0' via strchr(param, '\0'). */
+      while (str[*len] && strchr(param, str[*len]))
+        (*len)++;
+    }
 
   if (match)
     match->ofs = *len;
@@ -325,7 +329,8 @@ r_parser_email(gchar *str, gint *len, const gchar *param, gpointer state, RParse
   if (str[*len] == '.')
     return FALSE;
 
-  while (g_ascii_isalnum(str[*len]) || (strchr(email, str[*len])))
+  /* Guard against matching '\0' via strchr(email, '\0'). */
+  while (str[*len] && (g_ascii_isalnum(str[*len]) || (strchr(email, str[*len]))))
     (*len)++;
   /* last character of e-mail can not be a period */
   if (str[*len - 1] == '.')
@@ -353,8 +358,11 @@ r_parser_email(gchar *str, gint *len, const gchar *param, gpointer state, RParse
 
   end = *len;
   if (param)
-    while (strchr(param, str[*len]))
-      (*len)++;
+    {
+      /* Guard against matching '\0' via strchr(param, '\0'). */
+      while (str[*len] && strchr(param, str[*len]))
+        (*len)++;
+    }
 
   if (match)
     match->len = end - *len - match->ofs;
@@ -1491,7 +1499,6 @@ _find_node_recursively(RFindNodeState *state, RNode *root, gchar *key, gint keyl
   if (literal_prefix_inputlen == keylen && (literal_prefix_radixlen == root->keylen || root->keylen == -1))
     {
       /* key completely consumed by the literal */
-
       if (state->applicable_nodes)
         {
           /* collect all matching nodes */
@@ -1501,6 +1508,17 @@ _find_node_recursively(RFindNodeState *state, RNode *root, gchar *key, gint keyl
 
       if (root->value)
         return root;
+
+      /* Parser nodes can have children that match empty suffixes (e.g. OPTIONALSET). */
+      if (root->keylen == -1)
+        {
+          gchar *remaining_key = key + literal_prefix_inputlen;
+          gint remaining_keylen = keylen - literal_prefix_inputlen;
+
+          /* Input exhausted; only parser children can match. */
+          RNode *ret = _find_child_by_parser(state, root, remaining_key, remaining_keylen);
+          return ret;
+        }
     }
   else if ((root->keylen < 1) || (literal_prefix_inputlen < keylen && literal_prefix_radixlen >= root->keylen))
     {
