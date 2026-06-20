@@ -28,6 +28,7 @@
 
 #include <criterion/criterion.h>
 #include <criterion/parameterized.h>
+#include <glib.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -62,9 +63,14 @@ _construct_sample_message(void)
 /* Use the setup and teardown functions provided in test_filters_common.h */
 TestSuite(filter, .init = setup, .fini = teardown);
 
+/*
+ * Criterion parameter payloads must be self-contained here.
+ * We use fixed-size arrays (not pointers) to avoid pointer invalidation across
+ * worker process boundaries on macOS
+ */
 typedef struct _FilterParamBlank
 {
-  const gchar *name;
+  gchar name[64];
   gboolean expected_result;
 } FilterParamBlank;
 
@@ -102,4 +108,79 @@ ParameterizedTest(FilterParamBlank *param, filter, test_filter_blank)
   FilterExprNode *filter = filter_blank_new(param->name);
   testcase_with_message(msg, param->name, filter, param->expected_result);
   log_msg_unref(msg);
+}
+
+/*
+ * Regression test for https://github.com/syslog-ng/syslog-ng/issues/5679
+ *
+ * FilterBlank used to store the per-evaluation result in a shared struct
+ * field, causing a race when multiple worker threads evaluated the same node
+ * concurrently: one thread could read another thread's result.
+ */
+
+#define BLANK_RACE_N_THREADS    16
+#define BLANK_RACE_N_ITERATIONS 4096
+
+typedef struct _FilterBlankRaceThreadData
+{
+  FilterExprNode *filter;
+  gboolean errors;
+} FilterBlankRaceThreadData;
+
+static gpointer
+_filter_blank_race_thread(gpointer user_data)
+{
+  FilterBlankRaceThreadData *data = (FilterBlankRaceThreadData *) user_data;
+  data->errors = FALSE;
+
+  for (gint i = 0; i < BLANK_RACE_N_ITERATIONS; i++)
+    {
+      /* Alternate: even iterations have the field, odd ones do not */
+      LogMessage *msg = log_msg_new_empty();
+      gboolean field_present = (i % 2 == 0);
+
+      if (field_present)
+        log_msg_set_value_by_name_with_type(msg, "racetest", "1.2.3.4", -1, LM_VT_STRING);
+
+      gboolean result = filter_expr_eval(data->filter, msg);
+
+      /* blank() should return TRUE when the field is absent, FALSE when present */
+      if (result != !field_present)
+        {
+          data->errors = TRUE;
+          log_msg_unref(msg);
+          break;
+        }
+
+      log_msg_unref(msg);
+    }
+
+  return NULL;
+}
+
+Test(filter, test_filter_blank_thread_safety)
+{
+  FilterExprNode *f = filter_blank_new("racetest");
+  cr_assert(filter_expr_init(f, configuration), "Filter init failed");
+
+  GThread *threads[BLANK_RACE_N_THREADS];
+  FilterBlankRaceThreadData thread_data[BLANK_RACE_N_THREADS];
+
+  for (gint i = 0; i < BLANK_RACE_N_THREADS; i++)
+    {
+      thread_data[i].filter = f;
+      threads[i] = g_thread_new("filter-blank-race", _filter_blank_race_thread, &thread_data[i]);
+    }
+
+  gboolean any_errors = FALSE;
+  for (gint i = 0; i < BLANK_RACE_N_THREADS; i++)
+    {
+      g_thread_join(threads[i]);
+      if (thread_data[i].errors)
+        any_errors = TRUE;
+    }
+
+  filter_expr_unref(f);
+  cr_assert_not(any_errors,
+                "Thread-safety test failed: filter_blank_eval produced incorrect results under concurrent access");
 }

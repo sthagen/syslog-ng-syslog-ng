@@ -44,7 +44,6 @@ jobs:
         image:
           # dbld docker images only
           - almalinux-8
-          - almalinux-9
           - almalinux-10
           - centos-stream9
           - centos-stream10
@@ -65,10 +64,12 @@ jobs:
           - ubuntu-jammy
           - ubuntu-noble
           - ubuntu-plucky
+          - ubuntu-resolute
           - rhel-8
           - rhel-9
           - rhel-10
           # dbld docker image + binary packages + docker binary
+          - almalinux-9
           - debian-trixie
         arch:
           - amd64
@@ -90,6 +91,9 @@ jobs:
             platform: ubuntu-22.04-arm
             arch: arm64
           - image: ubuntu-plucky
+            platform: ubuntu-22.04-arm
+            arch: arm64
+          - image: ubuntu-resolute
             platform: ubuntu-22.04-arm
             arch: arm64
           - image: rhel-8

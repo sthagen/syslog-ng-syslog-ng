@@ -1,5 +1,5 @@
 Name: syslog-ng
-Version: 4.11.0
+Version: 4.12.0
 Release: 2%{?dist}
 Summary: Next-generation syslog server
 
@@ -46,11 +46,20 @@ Source3: syslog-ng.service
 %bcond_with bpf
 %endif
 
+# Secure logging (slog) is disabled by default in the official RPM
+# packages. Build with `--with slog` to enable it.
+%bcond_with slog
+
 BuildRequires: pkgconfig
 BuildRequires: libtool
 BuildRequires: bison
 BuildRequires: flex
 BuildRequires: glib2-devel
+# NOTE: RHEL/Fedora packaging guidelines disallow bundled copies of
+# system libraries, and several large downstream RPM users have
+# explicitly asked us to link against the distro ivykis. Hence
+# --with-ivykis=system below (and the matching runtime Requires:).
+# The Debian build, by contrast, intentionally uses --with-ivykis=internal.
 BuildRequires: ivykis-devel
 BuildRequires: json-c-devel
 BuildRequires: libcap-devel
@@ -160,6 +169,8 @@ BuildRequires: clang
 %endif
 
 Requires: logrotate
+# See the BuildRequires: ivykis-devel note above: RPM is built
+# --with-ivykis=system, so the distro ivykis is a hard runtime dep.
 Requires: ivykis >= %{ivykis_ver}
 
 Provides: syslog
@@ -357,6 +368,7 @@ Requires: %{name}%{?_isa} = %{version}-%{release}
 %description bpf
 This module provides faster UDP log collection using bpf.
 
+%if %{with slog}
 %package slog
 Summary: $(slog) support for %{name}
 Group: Development/Libraries
@@ -364,6 +376,8 @@ Requires: %{name}%{?_isa} = %{version}-%{release}
 
 %description slog
 This module adds support for the $(slog) template function plus command line utilities.
+
+%endif
 
 %package python
 Summary:        Python support for syslog-ng
@@ -438,6 +452,8 @@ ryslog is not on the system.
 
 %build
 
+# See the BuildRequires: ivykis-devel note above for why this is
+# --with-ivykis=system (and asymmetric with the Debian build).
 %configure \
     --prefix=%{_prefix} \
     --sysconfdir=%{_sysconfdir}/%{name} \
@@ -482,7 +498,8 @@ ryslog is not on the system.
     %{?with_amqp:--enable-amqp} \
     %{?with_redis:--enable-redis} \
     %{?with_riemann:--enable-riemann} \
-    %{?with_bpf:--enable-ebpf}
+    %{?with_bpf:--enable-ebpf} \
+    %{?with_slog:--enable-slog} %{!?with_slog:--disable-slog}
 
 # disable broken test by setting a different target
 sed -i 's/libs build/libs assemble/' Makefile
@@ -713,6 +730,7 @@ fi
 %{_libdir}/%{name}/libhttp.so
 %{_libdir}/%{name}/libazure-auth-header.so
 
+%if %{with slog}
 %files slog
 %{_libdir}/%{name}/libsecure-logging.so
 %{_bindir}/slogkey
@@ -722,6 +740,7 @@ fi
 %{_mandir}/man1/slogencrypt.1*
 %{_mandir}/man1/slogverify.1*
 %{_mandir}/man7/secure-logging.7*
+%endif
 
 %files python
 %{_libdir}/%{name}/libmod-python.so
@@ -767,6 +786,9 @@ fi
 
 
 %changelog
+* Tue Jun 16 2026 github-actions <41898282+github-actions@users.noreply.github.com> - 4.12.0-1
+- updated to 4.12.0
+
 * Tue Feb 24 2026 github-actions <41898282+github-actions@users.noreply.github.com> - 4.11.0-1
 - updated to 4.11.0
 

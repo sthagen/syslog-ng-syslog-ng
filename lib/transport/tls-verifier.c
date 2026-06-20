@@ -82,8 +82,6 @@ tls_wildcard_match(const gchar *host_name, const gchar *pattern)
 {
   gchar **pattern_parts, **hostname_parts;
   gboolean success = FALSE;
-  gchar *lower_pattern = NULL;
-  gchar *lower_hostname = NULL;
   gint i;
 
   pattern_parts = g_strsplit(pattern, ".", 0);
@@ -151,10 +149,13 @@ tls_wildcard_match(const gchar *host_name, const gchar *pattern)
                   break;
                 }
 
-              lower_pattern = g_ascii_strdown(pattern_parts[i], -1);
-              lower_hostname = g_ascii_strdown(hostname_parts[i], -1);
+              gchar *lower_pattern = g_ascii_strdown(pattern_parts[i], -1);
+              gchar *lower_hostname = g_ascii_strdown(hostname_parts[i], -1);
+              gboolean match = g_pattern_match_simple(lower_pattern, lower_hostname);
+              g_free(lower_pattern);
+              g_free(lower_hostname);
 
-              if (!g_pattern_match_simple(lower_pattern, lower_hostname))
+              if (!match)
                 {
                   success = FALSE;
                   break;
@@ -166,8 +167,6 @@ tls_wildcard_match(const gchar *host_name, const gchar *pattern)
         }
     }
 
-  g_free(lower_pattern);
-  g_free(lower_hostname);
   g_strfreev(pattern_parts);
   g_strfreev(hostname_parts);
   return success;
@@ -176,7 +175,7 @@ tls_wildcard_match(const gchar *host_name, const gchar *pattern)
 gboolean
 tls_verify_certificate_name(X509 *cert, const gchar *host_name)
 {
-  gchar pattern_buf[256];
+  gchar pattern_buf[256] = "";
   gint ext_ndx;
   gboolean found = FALSE, result = FALSE;
 
@@ -206,9 +205,8 @@ tls_verify_certificate_name(X509 *cert, const gchar *host_name)
 
                   if (dnsname_len > sizeof(pattern_buf) - 1)
                     {
-                      found = TRUE;
-                      result = FALSE;
-                      break;
+                      /* skip this oversized SAN entry, but keep checking the rest */
+                      continue;
                     }
 
                   memcpy(pattern_buf, dnsname, dnsname_len);
@@ -220,11 +218,18 @@ tls_verify_certificate_name(X509 *cert, const gchar *host_name)
               else if (gen_name->type == GEN_IPADD)
                 {
                   gchar dotted_ip[64] = {0};
-                  int addr_family = AF_INET;
-                  if (gen_name->d.iPAddress->length == 16)
+                  /* only 4 (IPv4) and 16 (IPv6) byte payloads are valid; skip malformed entries
+                   * to avoid feeding inet_ntop a mismatched source size */
+                  gsize ip_len = ASN1_STRING_length(gen_name->d.iPAddress);
+                  int addr_family;
+                  if (ip_len == 4)
+                    addr_family = AF_INET;
+                  else if (ip_len == 16)
                     addr_family = AF_INET6;
+                  else
+                    continue;
 
-                  if (inet_ntop(addr_family, gen_name->d.iPAddress->data, dotted_ip, sizeof(dotted_ip)))
+                  if (inet_ntop(addr_family, ASN1_STRING_get0_data(gen_name->d.iPAddress), dotted_ip, sizeof(dotted_ip)))
                     {
                       g_strlcpy(pattern_buf, dotted_ip, sizeof(pattern_buf));
                       found = TRUE;
@@ -232,16 +237,14 @@ tls_verify_certificate_name(X509 *cert, const gchar *host_name)
                     }
                 }
             }
-          sk_GENERAL_NAME_free(alt_names);
+          sk_GENERAL_NAME_pop_free(alt_names, GENERAL_NAME_free);
         }
     }
   if (!found)
     {
       /* hmm. there was no subjectAltName (this is deprecated, but still
        * widely used), look up the Subject, most specific CN */
-      X509_NAME *name;
-
-      name = X509_get_subject_name(cert);
+      X509_NAME *name = X509_get_subject_name(cert);
       if (X509_NAME_get_text_by_NID(name, NID_commonName, pattern_buf, sizeof(pattern_buf)) != -1)
         {
           result = tls_wildcard_match(host_name, pattern_buf);

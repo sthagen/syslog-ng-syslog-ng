@@ -37,16 +37,38 @@ AC_CONFIG_SRCDIR([syslog-ng/main.c])
 AC_CONFIG_MACRO_DIR([m4])
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
+dnl ============================================================
+dnl Check for tput and if it is working, to be able to use
+dnl colored output in the configure script
+dnl ============================================================
+AC_PATH_PROG([TPUT], [tput])
+AC_MSG_CHECKING([whether tput is available and working])
+if test -n "$TPUT" && "$TPUT" setaf 1 >/dev/null 2>&1; then
+    TPUT_WORKING=yes
+    AC_MSG_RESULT([yes])
+else
+    TPUT_WORKING=no
+    AC_MSG_RESULT([no])
+fi
+
 # ANSI color codes
 AC_CONFIG_COMMANDS_PRE([
+if test "x$TPUT_WORKING" = "xyes"; then
+    color_red=$($TPUT setaf 1 2>/dev/null || true)
+    color_green=$($TPUT setaf 2 2>/dev/null || true)
+    color_yellow=$($TPUT setaf 3 2>/dev/null || true)
+    color_blue=$($TPUT setaf 4 2>/dev/null || true)
+    color_reset=$($TPUT sgr0 2>/dev/null || true)
+else
     ESC=$(printf '\033')          # ASCII ESC
-    LBRACKET=$(printf '\x5B')     # ASCII square bracket
+    LBRACKET=$(printf '\133')     # ASCII square bracket (portable octal)
     color_red="${ESC}${LBRACKET}31m"
     color_green="${ESC}${LBRACKET}32m"
     color_yellow="${ESC}${LBRACKET}33m"
     color_blue="${ESC}${LBRACKET}34m"
     color_reset="${ESC}${LBRACKET}0m"
-    export color_red color_green color_yellow color_blue color_reset
+fi
+export color_red color_green color_yellow color_blue color_reset
 ])
 
 dnl ***************************************************************************
@@ -431,6 +453,10 @@ AC_ARG_ENABLE(tcp-wrapper,
     AS_HELP_STRING([--enable-tcp-wrapper], [Enable support for TCP wrappers.]),
     , enable_tcp_wrapper="auto")
 
+AC_ARG_ENABLE(jemalloc,
+    AS_HELP_STRING([--enable-jemalloc], [Enable support for jemalloc memory allocator (default: no)]),
+    , enable_jemalloc="no")
+
 AC_ARG_ENABLE(spoof-source,
     AS_HELP_STRING([--enable-spoof-source], [Enable support for spoofed source addresses.]),
     , enable_spoof_source="auto")
@@ -462,6 +488,10 @@ AC_ARG_ENABLE(linux-caps,
 AC_ARG_ENABLE(ebpf,
     AS_HELP_STRING([--enable-ebpf], [Enable support for loading of eBPF programs (default: no)]),
     , enable_ebpf="no")
+
+AC_ARG_ENABLE(slog,
+    AS_HELP_STRING([--enable-slog], [Enable secure logging (slog) module and CLI tools from Airbus (default: no)]),
+    , enable_slog="no")
 
 AC_ARG_ENABLE(gcov,
     AS_HELP_STRING([--enable-gcov], [Enable coverage profiling (default: no)]),
@@ -506,7 +536,7 @@ AC_ARG_WITH(libpaho-mqtt,
     AS_HELP_STRING([--with-libpaho-mqtt=DIR], [use libpaho-mqtt library from (prefix) directory DIR]))
 
 AC_ARG_ENABLE(grpc,
-    AS_HELP_STRING([--enable-grpc], [Enable GRPC based modules support (OpenTelemetry, Loki, BigQuery, Pub/Sub, ClickHouse) (requires C++17) (default: auto)]),
+    AS_HELP_STRING([--enable-grpc], [Enable GRPC based modules support (OpenTelemetry, Loki, BigQuery, Pub/Sub, ClickHouse) (requires C++20) (default: auto)]),
     , enable_grpc="auto")
 
 AC_ARG_WITH(protoc,
@@ -614,8 +644,7 @@ AC_ARG_ENABLE(afsnmp,
 
 AC_ARG_ENABLE([colored-log],
     AS_HELP_STRING([--enable-colored-log], [Enable colorized output in configure summary (default: no)]),
-    [enable_colored_log=yes],
-    [enable_colored_log=no])
+    , enable_colored_log="no")
 
 AC_ARG_ENABLE(tests,
     AS_HELP_STRING([--enable-tests], [Enable unit tests (default: auto)]),
@@ -639,13 +668,19 @@ AC_ARG_ENABLE(all-modules,
     AS_HELP_STRING([--enable-all-modules], [Forcibly enable all modules. (default: auto)]),
     , enable_all_modules="auto")
 
+AC_ARG_ENABLE([scl-syslogconf-awk],
+  [AS_HELP_STRING([--disable-scl-syslogconf-awk],
+                  [Do not install scl/syslogconf/convert-syslogconf.awk])],
+  [],
+  [enable_scl_syslogconf_awk=yes])
+
 if test "x$enable_all_modules" != "xauto"; then
    state="$enable_all_modules"
 
    # TODO: atomate collection of modules somehow
    MODULES="spoof_source sun_streams sql pacct mongodb json amqp stomp \
             redis systemd geoip2 riemann ipv6 smtp native python python_modules java java_modules \
-            http afsnmp kafka mqtt grpc"
+            http afsnmp kafka mqtt grpc ebpf slog"
    for mod in ${MODULES}; do
        modstate=$(eval echo \$enable_${mod})
        if test "x$modstate" = "xauto"; then
@@ -712,7 +747,7 @@ AM_CONDITIONAL([HAVE_PYTHON_INTERPRETER], [test "$PYTHON" != :])
 dnl ***************************************************************************
 dnl C++ support
 dnl NOTE: on macOS brew has an old autoconf-archive -> ax_cxx_compile_stdcxx.m4 version, which cannot detect
-dnl       correctly the c++14 and c++17 support of clang currently, you might want to get the latest one from the git repo
+dnl       correctly the c++14 and c++20 support of clang currently, you might want to get the latest one from the git repo
 dnl       wget -O ./m4/ax_cxx_compile_stdcxx.m4 https://raw.githubusercontent.com/autoconf-archive/autoconf-archive/master/m4/ax_cxx_compile_stdcxx.m4
 AC_PROG_CXX([$CPP_COMPILER])
 
@@ -721,6 +756,14 @@ if test "x$enable_cpp" = "xyes"; then
     AX_CXX_COMPILE_STDCXX([14], [noext], [mandatory])
     # Try to upgrade to C++17 if the compiler supports it
     AX_CXX_COMPILE_STDCXX([17], [noext], [optional])
+    dnl AX_CXX_COMPILE_STDCXX([20]) requires autoconf-archive serial >= 14 (released 2022-02-11).
+    dnl Older system installs lack the [20] dispatch branch and call m4_fatal at macro-expansion
+    dnl time — before any configure shell code runs, so [optional] cannot save us.
+    dnl _AX_CXX_COMPILE_STDCXX_testbody_20 is defined only in serial >= 14, so we use it as a
+    dnl compile-time guard to skip the probe entirely on platforms with an old m4 install.
+    m4_ifdef([_AX_CXX_COMPILE_STDCXX_testbody_20], [
+        AX_CXX_COMPILE_STDCXX([20], [noext], [optional])
+    ])
 
 elif test "x$enable_cpp" = "xauto"; then
     # Prefer C++14, but don't fail if it's missing
@@ -729,6 +772,10 @@ elif test "x$enable_cpp" = "xauto"; then
         enable_cpp=yes
         # Try to upgrade to C++17 if available
         AX_CXX_COMPILE_STDCXX([17], [noext], [optional])
+        dnl See comment above: guard C++20 probe against old autoconf-archive installs.
+        m4_ifdef([_AX_CXX_COMPILE_STDCXX_testbody_20], [
+            AX_CXX_COMPILE_STDCXX([20], [noext], [optional])
+        ])
     else
         enable_cpp=no
     fi
@@ -872,8 +919,8 @@ dnl We are checking for the postive warning flag, as gcc handles the
 dnl -Wno-XXX version oddly, so if no other warnings are present, it is not
 dnl reported at all, causing it to be unusable for detection purposes.
 
-AX_CHECK_COMPILE_FLAG([-Winitializer-overrides], [CFLAGS_W_NO_INITIALIZER_OVERRIDES="-Wno-initializer-overrides"])
-AX_CHECK_COMPILE_FLAG([-Wold-style-declaration], [CFLAGS_W_OLD_STYLE_DECLARATION="-Wold-style-declaration"])
+AX_CHECK_COMPILE_FLAG([-Winitializer-overrides], [CFLAGS_W_NO_INITIALIZER_OVERRIDES="-Wno-initializer-overrides"],,"-Werror")
+AX_CHECK_COMPILE_FLAG([-Wold-style-declaration], [CFLAGS_W_OLD_STYLE_DECLARATION="-Wold-style-declaration"],,"-Werror")
 AC_SUBST(CFLAGS_W_NO_INITIALIZER_OVERRIDES)
 AC_SUBST(CFLAGS_W_OLD_STYLE_DECLARATION)
 
@@ -1217,6 +1264,51 @@ AC_CHECK_LIB(rt, nanosleep, BASE_LIBS="$BASE_LIBS -lrt")
 AC_CHECK_FUNC(gethostbyname, [], AC_CHECK_LIB(nsl, gethostbyname, BASE_LIBS="$BASE_LIBS -lnsl"))
 AC_CHECK_LIB(regex, regexec, REGEX_LIBS="-lregex")
 AC_CHECK_LIB(resolv, res_init, RESOLV_LIBS="-lresolv")
+
+dnl ***************************************************************************
+dnl jemalloc support
+dnl ***************************************************************************
+
+if test "x$enable_jemalloc" = "xauto" || test "x$enable_jemalloc" = "xyes"; then
+  dnl Check if we are on FreeBSD where jemalloc is built into libc
+  case "${host_os}" in
+    *freebsd*)
+      AC_CHECK_HEADER([malloc_np.h],
+        [
+          AC_MSG_RESULT([FreeBSD built-in jemalloc found (part of libc)])
+          JEMALLOC_LIBS=""
+          enable_jemalloc="yes"
+        ],
+        [
+          if test "x$enable_jemalloc" = "xyes"; then
+            AC_MSG_ERROR([FreeBSD built-in jemalloc not found, but jemalloc support was explicitly enabled.])
+          fi
+          JEMALLOC_LIBS=""
+          enable_jemalloc="no"
+        ])
+      ;;
+    *)
+      dnl On other systems, look for jemalloc as a separate library
+      AC_CHECK_LIB(jemalloc, malloc,
+        [
+          JEMALLOC_LIBS="-ljemalloc"
+          enable_jemalloc="yes"
+        ],
+        [
+          if test "x$enable_jemalloc" = "xyes"; then
+            AC_MSG_ERROR([Could not find libjemalloc, and jemalloc support was explicitly enabled.])
+          fi
+          JEMALLOC_LIBS=""
+          enable_jemalloc="no"
+        ])
+      ;;
+  esac
+else
+  JEMALLOC_LIBS=""
+  enable_jemalloc="no"
+fi
+
+AC_SUBST(JEMALLOC_LIBS)
 
 CHECK_FUNCS_AND_DEFINE([
     fmemopen
@@ -1681,6 +1773,8 @@ if test "x$with_mongoc" = "xyes"; then
     CPPFLAGS="$CPPFLAGS $LIBMONGO_CFLAGS"
     AC_CHECK_DECLS([mongoc_uri_set_option_as_int32], [], [], [[#include $MONGOC_HEADER]])
     AC_CHECK_DECLS([MONGOC_URI_SERVERSELECTIONTIMEOUTMS], [], [], [[#include $MONGOC_HEADER]])
+    AC_CHECK_DECLS([bson_append_array_unsafe_begin], [], [], [[#include $MONGOC_HEADER
+#include <bson/bson.h>]])
     CPPFLAGS="$CPPFLAGS_SAVE"
 fi
 
@@ -1847,7 +1941,7 @@ if ! test "x$enable_grpc" = "xno"; then
             if test $ostype = "Darwin"; then
                 # AX[]_CXX_COMPILE_STDCXX format is needed to prevent the text treated as a macro
                 AC_MSG_WARN([On macOS, the Homebrew-provided autoconf-archive contains an outdated version of AX[]_CXX_COMPILE_STDCXX,
-which may incorrectly detect C++14 or C++17 support with clang. This can cause GRPC/C++ configuration to fail.
+which may incorrectly detect C++14 or C++20 support with clang. This can cause GRPC/C++ configuration to fail.
 Recommended fix:
     wget -O ./m4/ax_cxx_compile_stdcxx.m4 https://raw.githubusercontent.com/autoconf-archive/autoconf-archive/master/m4/ax_cxx_compile_stdcxx.m4])
             fi
@@ -1859,8 +1953,21 @@ Recommended fix:
 fi
 
 if ! test "x$enable_grpc" = "xno"; then
-    # gRPC requires at least C++17
-    AX_CXX_COMPILE_STDCXX([17], [noext], [mandatory])
+    # gRPC requires C++20 (preferred) or at least C++17 as a fallback.
+    dnl See comment above: guard C++20 probe against old autoconf-archive installs.
+    m4_ifdef([_AX_CXX_COMPILE_STDCXX_testbody_20], [
+        AX_CXX_COMPILE_STDCXX([20], [noext], [optional])
+    ])
+    if test "x$HAVE_CXX20" != "x1"; then
+        AX_CXX_COMPILE_STDCXX([17], [noext], [optional])
+        if test "x$HAVE_CXX17" != "x1"; then
+            if test "x$enable_grpc" = "xyes"; then
+                AC_MSG_ERROR([gRPC modules require at least C++17, but neither C++17 nor C++20 support was found.])
+            else
+                enable_grpc=no
+            fi
+        fi
+    fi
 fi
 
 # ProtoBuf libraries
@@ -2529,7 +2636,7 @@ if test -z "$MODULE_LDFLAGS"; then
 fi
 MODULE_DEPS_LIBS="\$(top_builddir)/lib/libsyslog-ng.la"
 
-SYSLOGNG_DEPS_LIBS="$LIBS $BASE_LIBS $GLIB_LIBS $EVTLOG_LIBS $SECRETSTORAGE_LIBS $RESOLV_LIBS $LIBCAP_LIBS $PCRE2_LIBS $REGEX_LIBS $DL_LIBS $LIBUNWIND_LIBS $JSON_LIBS $OPENSSL_LIBS"
+SYSLOGNG_DEPS_LIBS="$JEMALLOC_LIBS $LIBS $BASE_LIBS $GLIB_LIBS $EVTLOG_LIBS $SECRETSTORAGE_LIBS $RESOLV_LIBS $LIBCAP_LIBS $PCRE2_LIBS $REGEX_LIBS $DL_LIBS $LIBUNWIND_LIBS $JSON_LIBS $OPENSSL_LIBS"
 
 if test "x$with_ivykis" = "xinternal"; then
     # when using the internal ivykis, we're linking it statically into libsyslog-ng.so
@@ -2616,6 +2723,7 @@ AC_DEFINE_UNQUOTED(ENABLE_MEMTRACE, `enable_value $enable_memtrace`, [Enable mem
 AC_DEFINE_UNQUOTED(ENABLE_SPOOF_SOURCE, `enable_value $enable_spoof_source`, [Enable spoof source support])
 AC_DEFINE_UNQUOTED(ENABLE_IPV6, `enable_value $enable_ipv6`, [Enable IPv6 support])
 AC_DEFINE_UNQUOTED(ENABLE_TCP_WRAPPER, `enable_value $enable_tcp_wrapper`, [Enable TCP wrapper support])
+AC_DEFINE_UNQUOTED(ENABLE_JEMALLOC, `enable_value $enable_jemalloc`, [Enable jemalloc support])
 AC_DEFINE_UNQUOTED(ENABLE_LINUX_CAPS, `enable_value $enable_linux_caps`, [Enable Linux capability management support])
 AC_DEFINE_UNQUOTED(ENABLE_EBPF, `enable_value $enable_ebpf`, [Enable Linux eBPF support])
 AC_DEFINE_UNQUOTED(ENABLE_ENV_WRAPPER, `enable_value $enable_env_wrapper`, [Enable environment wrapper support])
@@ -2646,6 +2754,7 @@ AM_CONDITIONAL(ENABLE_SUN_STREAMS, [test "$enable_sun_streams" = "yes"])
 AM_CONDITIONAL(ENABLE_DARWIN_OSL, [test "$enable_darwin_osl" = "yes"])
 AM_CONDITIONAL(ENABLE_OPENBSD_SYSTEM_SOURCE, [test "$enable_openbsd_system_source" = "yes"])
 AM_CONDITIONAL(ENABLE_EBPF, [test "$enable_ebpf" = "yes"])
+AM_CONDITIONAL(ENABLE_SLOG, [test "$enable_slog" = "yes"])
 AM_CONDITIONAL(ENABLE_PACCT, [test "$enable_pacct" = "yes"])
 AM_CONDITIONAL(ENABLE_MONGODB, [test "$enable_mongodb" = "yes"])
 AM_CONDITIONAL(ENABLE_SMTP, [test "$enable_smtp" = "yes"])
@@ -2675,6 +2784,7 @@ AM_CONDITIONAL(ENABLE_MANPAGES_INSTALL, [test "$enable_manpages_install" != "no"
 AM_CONDITIONAL(MANPAGES_REMOTE, [test "x$with_manpages" = "xremote"])
 AM_CONDITIONAL(ENABLE_NATIVE, [test "$enable_native" != "no"])
 AM_CONDITIONAL(ENABLE_EXTRA_WARNINGS, [test "$enable_extra_warnings" = "yes"])
+AM_CONDITIONAL(ENABLE_WERROR, [test "$enable_werror" = "yes"])
 AM_CONDITIONAL(ENABLE_TESTING, [test "$enable_tests" != "no"])
 AM_CONDITIONAL(ENABLE_EXAMPLE_MODULES, [test "$enable_example_modules" = "yes"])
 AM_CONDITIONAL(ENABLE_SANITIZER, [test "$with_sanitizer" != "no"])
@@ -2685,6 +2795,7 @@ AM_CONDITIONAL([HAVE_GETRANDOM], [test x$ac_cv_func_getrandom = xyes])
 AM_CONDITIONAL([HAVE_FMEMOPEN], [test x$ac_cv_func_fmemopen = xyes])
 AM_CONDITIONAL([HAVE_JAVAH], [test -n "$JAVAH_BIN"])
 AM_CONDITIONAL(ENABLE_IPV6, [test $enable_ipv6 = yes])
+AM_CONDITIONAL([ENABLE_SCL_SYSLOGCONF_AWK], [test "x$enable_scl_syslogconf_awk" = "xyes"])
 
 AM_CONDITIONAL(OS_TYPE_MACOS, [test $ostype = "Darwin"])
 AM_CONDITIONAL(OS_TYPE_FREEBSD, [test $ostype = "FreeBSD"])
@@ -2772,6 +2883,7 @@ print_config_line() {
 
     if test "x$enable_colored_log" = "xyes"; then
         local color_code=$color_blue
+
         case "$value" in
             yes*|YES*|true*|TRUE*) color_code=$color_green ;;
             no*|NO*|false*|FALSE*) color_code=$color_red ;;
@@ -2837,7 +2949,7 @@ print_config_line "compiler options" "$CFLAGS $CPPFLAGS"
 print_config_line "ObjC compiler" "$OBJC - $($OBJC -v 2>&1 | grep -i ' version ') - $(command -v $OBJC)"
 print_config_line "C++ enabled" "${enable_cpp:=no}"
 if test "x$enable_cpp" = "xyes"; then
-    print_config_line "C++ compiler" "$CXX - $($CXX -v 2>&1 | grep -i ' version ') - $(command -v $CXX)"
+    print_config_line "C++ compiler" "$CXX - $($CXX -v 2>&1 | grep -i ' version ') - $(command -v "${CXX%% *}")"
     print_config_line "C++ compiler options" "$CXXFLAGS"
 fi
 print_config_line "linker flags" "$LDFLAGS $LIBS"
@@ -2861,6 +2973,7 @@ print_config_line "Debug symbols" "${enable_debug:=no}"
 print_config_line "GCC profiling" "${enable_gprof:=no}"
 print_config_line "Memtrace" "${enable_memtrace:=no}"
 print_config_line "IPV6 support" "${enable_ipv6:=no}"
+print_config_line "jemalloc support" "${enable_jemalloc:=no}"
 print_config_line "spoof-source support" "${enable_spoof_source:=no}"
 print_config_line "tcp-wrapper support" "${enable_tcp_wrapper:=no}"
 print_config_line "Linux capability support" "${has_linux_caps:=no}"
@@ -2879,30 +2992,31 @@ fi
 
 print_heading "Modules"
 print_config_line "Module search path" "$module_path"
-print_config_line "Sun STREAMS support (module)" "${enable_sun_streams:=no}"
-print_config_line "Darwin OSL support (module)" "${enable_darwin_osl:=no}"
-print_config_line "OpenBSD syslog (module)" "${enable_openbsd_system_source:=no}"
-print_config_line "SQL support (module)" "${enable_sql:=no}"
-print_config_line "PACCT module (EXPERIMENTAL)" "${enable_pacct:=no}"
-print_config_line "MongoDB destination (module)" "${enable_mongodb:=no} (${mongo_version_str})"
-print_config_line "JSON support (module)" "${enable_json:=no}"
-print_config_line "SMTP support (module)" "${enable_smtp:=no}"
-print_config_line "HTTP support (module)" "${enable_http:=no}"
+print_config_line "afsnmp support (module)" "${enable_afsnmp:=no}"
 print_config_line "AMQP destination (module)" "${enable_amqp:=no}"
-print_config_line "STOMP destination (module)" "${enable_stomp:=no}"
-print_config_line "MQTT (module)" "${enable_mqtt:=no}"
-print_config_line "GRPC (module)" "${enable_grpc:=no}" "$grpc_warning_str"
 print_config_line "Cloud Auth (module)" "${enable_cloud_auth:=no}"
+print_config_line "eBPF support (module)" "${enable_ebpf:=no}"
+print_config_line "Darwin OSL support (module)" "${enable_darwin_osl:=no}"
 print_config_line "GEOIP2 support (module)" "${enable_geoip2:=no}"
-print_config_line "Redis support (module)" "${enable_redis:=no}"
+print_config_line "GRPC (module)" "${enable_grpc:=no}" "$grpc_warning_str"
+print_config_line "HTTP support (module)" "${enable_http:=no}"
+print_config_line "JSON support (module)" "${enable_json:=no}"
 print_config_line "Kafka support (module)" "${enable_kafka:=no}"
+print_config_line "MongoDB destination (module)" "${enable_mongodb:=no} (${mongo_version_str})"
+print_config_line "MQTT support (module)" "${enable_mqtt:=no}"
+print_config_line "OpenBSD syslog (module)" "${enable_openbsd_system_source:=no}"
+print_config_line "PACCT (module) (EXPERIMENTAL)" "${enable_pacct:=no}"
+print_config_line "Redis support (module)" "${enable_redis:=no}"
 print_config_line "Riemann destination (module)" "${enable_riemann:=no}, microseconds: ${riemann_micros:=no}"
+print_config_line "Secure logging - slog (module)" "${enable_slog:=no}"
+print_config_line "SMTP support (module)" "${enable_smtp:=no}"
+print_config_line "SQL support (module)" "${enable_sql:=no}"
+print_config_line "STOMP destination (module)" "${enable_stomp:=no}"
+print_config_line "Sun STREAMS support (module)" "${enable_sun_streams:=no}"
 print_config_line "Python" "${enable_python:=no} (pkg-config package: ${with_python:=none}, packages: ${with_python_packages})"
 print_config_line "Python modules" "${enable_python_modules:=no}"
 print_config_line "Java" "${enable_java:=no}"
 print_config_line "Java modules" "${enable_java_modules:=no}"
-print_config_line "afsnmp module" "${enable_afsnmp:=no}"
-print_config_line "eBPF module" "${enable_ebpf:=no}"
-print_config_line "native bindings" "${enable_native:=no}"
+print_config_line "Native bindings" "${enable_native:=no}"
 print_config_line "Example modules" "${enable_example_modules:=yes}"
 print_heading ""
